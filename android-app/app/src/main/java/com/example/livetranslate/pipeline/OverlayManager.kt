@@ -85,14 +85,22 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.END
             }
+            // ⚙ 菜单按钮（热区限定在图标区域，避免与 ✕ 冲突）
+            val menuBtn = TextView(context).apply {
+                text = "⚙"
+                textSize = 16f
+                setTextColor(Color.argb(220, 255, 255, 255))
+                setPadding(dp(10), dp(10), dp(4), dp(10))
+                setOnClickListener { showStyleMenu(v) }
+            }
             val closeBtn = TextView(context).apply {
                 text = "✕"
                 textSize = 16f
                 setTextColor(Color.argb(220, 255, 255, 255))
-                // 大点击热区（右上角容易点中）
-                setPadding(dp(20), dp(10), dp(12), dp(10))
+                setPadding(dp(14), dp(10), dp(10), dp(10))
                 setOnClickListener { hide() }
             }
+            topRow.addView(menuBtn)
             topRow.addView(closeBtn)
             v.addView(topRow)
 
@@ -128,8 +136,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             }
             content.addView(original)
             content.addView(translation)
-            // 点击内容区 → 二级菜单（topRow 拖动、handle resize 互不干扰）
-            content.setOnClickListener { showStyleMenu(v) }
+            // 菜单触发限定在 ⚙ 图标（内容区点击不再弹菜单，避免误触）
             v.addView(content, android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
@@ -148,7 +155,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             v.addView(handle, handleLp)
 
             // 点击字幕条（非按钮区域）→ 二级菜单（锚定下方弹出，不占屏幕中心）
-            v.setOnClickListener { showStyleMenu(v) }
+
 
             // resize 拖动手柄
             handle.setOnTouchListener { _, event ->

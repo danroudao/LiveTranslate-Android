@@ -106,11 +106,18 @@ class SubtitleAccessibilityService : AccessibilityService() {
             text = "LiveTranslate 字幕条就绪"
             layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
+        val menuBtn = TextView(this).apply {
+            text = "⚙"
+            textSize = 16f
+            setTextColor(Color.argb(220, 255, 255, 255))
+            setPadding(dp(10), dp(10), dp(4), dp(10))
+            setOnClickListener { showStyleMenu(container) }
+        }
         val closeBtn = TextView(this).apply {
             text = "✕"
             textSize = 18f
             setTextColor(Color.argb(220, 255, 255, 255))
-            setPadding(dp(18), dp(10), dp(20), dp(10))
+            setPadding(dp(14), dp(10), dp(12), dp(10))
             // 点击关闭字幕条（服务保持连接，可从主界面重新显示）
             setOnClickListener { hideBar() }
         }
@@ -126,10 +133,9 @@ class SubtitleAccessibilityService : AccessibilityService() {
             }
         }
         container.addView(tv)
+        container.addView(menuBtn)
         container.addView(closeBtn)
         container.addView(resizeBtn)
-        // 点击文本区 → 二级菜单（锚定字幕条上方弹出，不占屏幕中心）
-        tv.setOnClickListener { showStyleMenu(container) }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
