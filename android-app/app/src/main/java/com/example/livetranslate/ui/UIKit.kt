@@ -324,6 +324,9 @@ object UIKit {
         return SeekBar(context).apply {
             this.max = max
             this.progress = progress
+            // 清除默认背景/分割线，避免深色主题下出现突兀色块
+            background = null
+            splitTrack = false
             this.progressDrawable = progressDrawable
             thumb = IosThumbDrawable(thumbD)
             thumbOffset = dp(context, 1)

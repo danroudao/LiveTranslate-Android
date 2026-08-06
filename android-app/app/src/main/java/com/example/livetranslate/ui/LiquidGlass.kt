@@ -25,8 +25,8 @@ import android.widget.PopupWindow
 object LiquidGlass {
 
     /** 玻璃面板底色（深色半透明） */
-    const val GLASS_BASE = 0xD1121420.toInt()    // rgba(18,20,32,82%) 液态玻璃（模糊可透出）
-    const val GLASS_SOFT = 0xA8121420.toInt()    // rgba(18,20,32,66%) 更透
+    const val GLASS_BASE = 0xC92A2C3A.toInt()    // rgba(42,44,58,79%) 亮玻璃灰（避免黑块感）
+    const val GLASS_SOFT = 0xA82A2C3A.toInt()    // rgba(42,44,58,66%) 更透
 
     /** 高光描边色（玻璃边缘） */
     const val EDGE_HI = 0x59FFFFFF.toInt()       // 白 35%

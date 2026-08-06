@@ -14,6 +14,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.TextView
@@ -392,13 +393,33 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         })
         content.addView(actionRow)
 
-        val popup = PopupWindow(content, dp(290), WindowManager.LayoutParams.WRAP_CONTENT, true)
+        // 锚定悬浮窗底部（而非 ⚙ 按钮下方，避免盖住悬浮窗原文/译文）
+        val anchorTop = params?.y ?: 0
+        val overlayBottom = anchorTop + (view?.height ?: anchor.height)
+        val spaceBelow = screenH - overlayBottom - dp(16)
+        val menuH = dp(460) // 菜单内容估算高度
+        // 上方弹出时：菜单顶部对齐状态栏下方（不溢出屏幕）
+        val targetTop = (anchorTop - menuH - dp(8)).coerceAtLeast(dp(44))
+        val menuY = if (spaceBelow >= menuH) overlayBottom + dp(6) else targetTop
+        val menuX = params?.x ?: 0
+        // 菜单内容包 ScrollView：空间不足时内部滚动，窗口高度受限不遮挡悬浮窗
+        val scrollContent = ScrollView(context).apply {
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(content)
+        }
+        val popup = PopupWindow(scrollContent, dp(290), WindowManager.LayoutParams.WRAP_CONTENT, true)
         popup.isOutsideTouchable = true
         // 服务上下文无 Activity token：显式用 overlay 窗口类型
         popup.setWindowLayoutType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        // 高度上限 = 可用空间（菜单永不超出屏幕/不遮挡悬浮窗）
+        val availH = if (spaceBelow >= menuH) spaceBelow else anchorTop - dp(44)
+        val menuMaxH = (menuH + dp(24)).coerceAtMost(availH.coerceAtLeast(dp(240)))
+        popup.height = menuMaxH
+        android.util.Log.i("OverlayMenu", "anchorTop=$anchorTop overlayBottom=$overlayBottom " +
+            "spaceBelow=$spaceBelow menuH=$menuH anchorH=${anchor.height} menuY=$menuY h=${popup.height}")
         try {
-            // 锚定字幕条下方（不占据屏幕中心）
-            popup.showAsDropDown(anchor, 0, dp(6))
+            // 手动定位：悬浮窗下方（空间不足则上方），绝不与悬浮窗重叠
+            popup.showAtLocation(anchor, Gravity.TOP or Gravity.START, menuX, menuY)
             styleMenu = popup
             // 液态玻璃：菜单窗口背景模糊（API 31+，延迟到布局稳定后应用）
             content.postDelayed({
