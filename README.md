@@ -46,6 +46,7 @@ cd android-app
 
 ## 文档
 
+- [UI 开发接手指南（代码导航/UI 模块/数据流/构建测试）](UI_DEV_GUIDE_zh.md)
 - [移植方案（可行性分析/架构设计/分阶段计划）](DEVELOPMENT_PLAN_zh.md)
 - [环境搭建 / 踩坑记录 / 验证记录](ENV_SETUP_zh.md)
 
