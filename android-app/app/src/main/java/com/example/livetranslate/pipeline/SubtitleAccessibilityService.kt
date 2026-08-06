@@ -205,12 +205,13 @@ class SubtitleAccessibilityService : AccessibilityService() {
         dismissing = false
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(14))
+            setPadding(dp(18), dp(14), dp(18), dp(16))
             background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(0xF21E1E23.toInt())
+                cornerRadius = dp(24).toFloat()
+                setColor(UIKit.GLASS_STRONG)
                 setStroke(dp(1), 0x26FFFFFF.toInt())
             }
+            elevation = dp(14).toFloat()
         }
 
         // ── 预设模板行 ──
@@ -260,7 +261,7 @@ class SubtitleAccessibilityService : AccessibilityService() {
         }
         val minusBtn = UIKit.pillButton(this, "−", matchWidth = true)
         val sizeVal = TextView(this).apply {
-            text = "20sp"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            text = "20sp"; textSize = 14f; setTextColor(UIKit.TEXT); gravity = Gravity.CENTER
         }
         val plusBtn = UIKit.pillButton(this, "+", matchWidth = true)
         fun adjust(delta: Float) {
@@ -325,9 +326,9 @@ class SubtitleAccessibilityService : AccessibilityService() {
 
     private fun presetPill(text: String): TextView {
         val bg = GradientDrawable().apply {
-            cornerRadius = dp(10).toFloat()
-            setColor(UIKit.CARD_HI)
-            setStroke(dp(1), UIKit.CARD_LINE)
+            cornerRadius = dp(12).toFloat()
+            setColor(0xE6FFFFFF.toInt())
+            setStroke(dp(1), UIKit.HAIRLINE)
         }
         return TextView(this).apply {
             this.text = text
