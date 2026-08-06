@@ -87,9 +87,10 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             }
             val closeBtn = TextView(context).apply {
                 text = "✕"
-                textSize = 14f
+                textSize = 16f
                 setTextColor(Color.argb(220, 255, 255, 255))
-                setPadding(dp(10), dp(2), dp(4), dp(2))
+                // 大点击热区（右上角容易点中）
+                setPadding(dp(20), dp(10), dp(12), dp(10))
                 setOnClickListener { hide() }
             }
             topRow.addView(closeBtn)
@@ -127,6 +128,8 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             }
             content.addView(original)
             content.addView(translation)
+            // 点击内容区 → 二级菜单（topRow 拖动、handle resize 互不干扰）
+            content.setOnClickListener { showStyleMenu(v) }
             v.addView(content, android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
@@ -146,10 +149,6 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
 
             // 点击字幕条（非按钮区域）→ 二级菜单（锚定下方弹出，不占屏幕中心）
             v.setOnClickListener { showStyleMenu(v) }
-            v.setOnTouchListener { _, ev ->
-                android.util.Log.i("OverlayTouch", "v touch action=${ev.action} at=(${ev.rawX},${ev.rawY})")
-                false  // 不消费，让 click 检测继续
-            }
 
             // resize 拖动手柄
             handle.setOnTouchListener { _, event ->

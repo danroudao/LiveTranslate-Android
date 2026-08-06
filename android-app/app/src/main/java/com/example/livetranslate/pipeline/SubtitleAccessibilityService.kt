@@ -110,7 +110,7 @@ class SubtitleAccessibilityService : AccessibilityService() {
             text = "✕"
             textSize = 18f
             setTextColor(Color.argb(220, 255, 255, 255))
-            setPadding(dp(12), dp(10), dp(16), dp(10))
+            setPadding(dp(18), dp(10), dp(20), dp(10))
             // 点击关闭字幕条（服务保持连接，可从主界面重新显示）
             setOnClickListener { hideBar() }
         }
