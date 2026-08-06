@@ -3,6 +3,7 @@ package com.example.livetranslate.pipeline
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -10,20 +11,23 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.PopupWindow
-import android.widget.SeekBar
 import android.widget.TextView
+import com.example.livetranslate.model.SettingsStore
+import com.example.livetranslate.model.SubtitleStyle
+import com.example.livetranslate.ui.IOSMotion
+import com.example.livetranslate.ui.UIKit
 
 /**
- * 无障碍字幕条 —— subtitle_overlay.py 的免悬浮窗权限路线。
+ * 无障碍字幕条 —— 免悬浮窗权限路线（iOS 风格现代化版本）。
  *
  * TYPE_ACCESSIBILITY_OVERLAY（API 22+）：
  *  - 无需 SYSTEM_ALERT_WINDOW 权限，用户只需在系统设置中开启无障碍服务
  *  - 可在任意应用上方显示（包括全屏游戏）
  *  - API 33+ 限制：覆盖层高度 ≤ 屏幕 2/3（字幕条形态无影响）
  *
- * 与 CaptureService 同进程，通过静态实例直接更新。
+ * 交互约定不变：⚙ 弹菜单 / ✕ 关闭 / ⤡ 调尺寸；样式实时生效 + 立即持久化。
  */
 class SubtitleAccessibilityService : AccessibilityService() {
 
@@ -53,13 +57,13 @@ class SubtitleAccessibilityService : AccessibilityService() {
     }
 
     private var textView: TextView? = null
-    private var containerView: android.widget.LinearLayout? = null
+    private var containerView: LinearLayout? = null
     private val handler = Handler(Looper.getMainLooper())
     private val wm: WindowManager by lazy {
         getSystemService(WINDOW_SERVICE) as WindowManager
     }
-    private val store by lazy { com.example.livetranslate.model.SettingsStore(this) }
-    private var style: com.example.livetranslate.model.SubtitleStyle = store.subtitleStyle
+    private val store by lazy { SettingsStore(this) }
+    private var style: SubtitleStyle = store.subtitleStyle
     private var params: WindowManager.LayoutParams? = null
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -67,13 +71,13 @@ class SubtitleAccessibilityService : AccessibilityService() {
     private fun applyStyle() {
         val tv = textView ?: return
         val c = containerView ?: return
-        val bg = android.graphics.drawable.GradientDrawable().apply {
+        val bg = GradientDrawable().apply {
             cornerRadius = dp(style.cornerRadius).toFloat()
-            setColor(android.graphics.Color.argb(style.alpha, 0, 0, 0))
+            setColor(Color.argb(style.alpha, 0, 0, 0))
         }
         c.background = bg
         val size = if (style.fontSize > 0) style.fontSize
-                   else com.example.livetranslate.model.SubtitleStyle.autoFontSize(
+                   else SubtitleStyle.autoFontSize(
                        resources.displayMetrics.widthPixels / resources.displayMetrics.density)
         val tf = when (style.fontFamily) {
             "serif" -> android.graphics.Typeface.SERIF
@@ -92,11 +96,11 @@ class SubtitleAccessibilityService : AccessibilityService() {
         showBar()
     }
 
-    /** 显示字幕条（含 ✕ 关闭按钮） */
+    /** 显示字幕条（iOS 进入动效：底部上滑 + 淡入） */
     fun showBar() {
         if (containerView != null) return
-        val container = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val tv = TextView(this).apply {
@@ -104,7 +108,7 @@ class SubtitleAccessibilityService : AccessibilityService() {
             setShadowLayer(3f, 0f, 0f, Color.BLACK)
             setPadding(dp(16), dp(10), dp(8), dp(10))
             text = "LiveTranslate 字幕条就绪"
-            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val menuBtn = TextView(this).apply {
             text = "⚙"
@@ -153,6 +157,15 @@ class SubtitleAccessibilityService : AccessibilityService() {
             textView = tv
             this.params = params
             applyStyle()
+            // iOS 进入动效：底部上滑 + 淡入
+            container.alpha = 0f
+            container.translationY = dp(24).toFloat()
+            container.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(IOSMotion.BASE_MS)
+                .setInterpolator(IOSMotion.DECELERATE)
+                .start()
         } catch (e: Exception) {
             containerView = null
             textView = null
@@ -182,44 +195,74 @@ class SubtitleAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** 二级菜单（锚定字幕条上方） */
+    // ---------- 二级菜单（iOS 风格，锚定字幕条上方） ----------
+
     private var styleMenu: PopupWindow? = null
+    private var dismissing = false
 
     private fun showStyleMenu(anchor: View) {
         styleMenu?.dismiss()
-        val content = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            setBackgroundColor(Color.argb(245, 30, 30, 35))
-        }
-        fun rowLabel(s: String) = TextView(this).apply {
-            text = s; textSize = 13f; setTextColor(Color.WHITE)
-        }
-        // 透明度
-        content.addView(rowLabel("背景透明度"))
-        val alphaBar = SeekBar(this).apply { max = 255; progress = style.alpha }
-        alphaBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                style = style.copy(alpha = p)
-                store.subtitleStyle = style
-                applyStyle()
+        dismissing = false
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(0xF21E1E23.toInt())
+                setStroke(dp(1), 0x26FFFFFF.toInt())
             }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
-        content.addView(alphaBar)
-        // 字号
-        content.addView(rowLabel("字号"))
-        val sizeRow = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
+        }
+
+        // ── 预设模板行 ──
+        val presets = listOf(
+            "高清" to SubtitleStyle(alpha = 255, fontSize = 0f, bold = true, cornerRadius = 14),
+            "夜览" to SubtitleStyle(alpha = 180, fontSize = 0f, bold = false, cornerRadius = 20),
+            "极简" to SubtitleStyle(alpha = 120, fontSize = 0f, bold = false, cornerRadius = 8),
+        )
+        val presetRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val minusBtn = Button(this).apply { text = "−" }
+        val presetBtns = mutableListOf<TextView>()
+        for ((i, p) in presets.withIndex()) {
+            val btn = presetPill(p.first)
+            btn.setOnClickListener {
+                style = p.second
+                store.subtitleStyle = style
+                applyStyle()
+                presetBtns.forEachIndexed { j, b -> b.alpha = if (j == i) 1f else 0.55f }
+            }
+            presetBtns.add(btn)
+            presetRow.addView(btn, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                if (i > 0) marginStart = dp(8)
+            })
+        }
+        content.addView(presetRow)
+
+        fun rowLabel(s: String) = TextView(this).apply {
+            text = s; textSize = 12.5f; setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(12), dp(2), dp(2))
+        }
+
+        // ── 背景透明度 ──
+        content.addView(rowLabel("背景透明度"))
+        content.addView(UIKit.iosSeekBar(this, 255, style.alpha) { p ->
+            style = style.copy(alpha = p)
+            store.subtitleStyle = style
+            applyStyle()
+        })
+
+        // ── 字号 ──
+        content.addView(rowLabel("字号"))
+        val sizeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val minusBtn = UIKit.pillButton(this, "−", matchWidth = true)
         val sizeVal = TextView(this).apply {
             text = "20sp"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
         }
-        val plusBtn = Button(this).apply { text = "+" }
+        val plusBtn = UIKit.pillButton(this, "+", matchWidth = true)
         fun adjust(delta: Float) {
             var size = (if (style.fontSize > 0) style.fontSize else 20f) + delta
             size = size.coerceIn(10f, 60f)
@@ -230,60 +273,111 @@ class SubtitleAccessibilityService : AccessibilityService() {
         }
         minusBtn.setOnClickListener { adjust(-2f) }
         plusBtn.setOnClickListener { adjust(2f) }
-        sizeRow.addView(minusBtn)
-        sizeRow.addView(sizeVal, android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        sizeRow.addView(plusBtn)
+        sizeRow.addView(minusBtn, LinearLayout.LayoutParams(0, dp(36), 1f))
+        sizeRow.addView(sizeVal, LinearLayout.LayoutParams(0, dp(36), 2f))
+        sizeRow.addView(plusBtn, LinearLayout.LayoutParams(0, dp(36), 1f))
         content.addView(sizeRow)
-        // 圆角
-        content.addView(rowLabel("圆角"))
-        val cornerBar = SeekBar(this).apply { max = 48; progress = style.cornerRadius }
-        cornerBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                style = style.copy(cornerRadius = p)
-                store.subtitleStyle = style
-                applyStyle()
-            }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
-        content.addView(cornerBar)
-        // 完成
-        val doneBtn = Button(this).apply { text = "完成" }
-        content.addView(doneBtn)
-        doneBtn.setOnClickListener { styleMenu?.dismiss() }
 
-        val popup = PopupWindow(content, dp(280), WindowManager.LayoutParams.WRAP_CONTENT, true)
+        // ── 粗体 ──
+        val boldToggle = UIKit.pillButton(this, if (style.bold) "粗体: 开" else "粗体: 关", matchWidth = true)
+        boldToggle.setOnClickListener {
+            style = style.copy(bold = !style.bold)
+            store.subtitleStyle = style
+            boldToggle.text = if (style.bold) "粗体: 开" else "粗体: 关"
+            applyStyle()
+        }
+        content.addView(boldToggle.apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(12)
+        })
+
+        // ── 圆角 ──
+        content.addView(rowLabel("圆角"))
+        content.addView(UIKit.iosSeekBar(this, 48, style.cornerRadius) { p ->
+            style = style.copy(cornerRadius = p)
+            store.subtitleStyle = style
+            applyStyle()
+        })
+
+        // ── 完成 ──
+        val doneBtn = UIKit.iosButton(this, "完成", UIKit.ButtonStyle.PRIMARY, heightDp = 38, small = true)
+        doneBtn.setOnClickListener { dismissMenu() }
+        content.addView(doneBtn.apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(14)
+        })
+
+        val popup = PopupWindow(content, dp(290), WindowManager.LayoutParams.WRAP_CONTENT, true)
         popup.isOutsideTouchable = true
         popup.setWindowLayoutType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
         try {
             // 锚定字幕条上方弹出（不占屏幕中心）
             popup.showAsDropDown(anchor, 0, -popup.contentView.height - dp(8))
             styleMenu = popup
+            IOSMotion.popIn(content)
         } catch (e: Exception) {
             try {
                 popup.showAtLocation(anchor, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, dp(12))
                 styleMenu = popup
+                IOSMotion.popIn(content)
             } catch (e2: Exception) {
             }
         }
     }
 
-    /** 隐藏字幕条 */
+    private fun presetPill(text: String): TextView {
+        val bg = GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat()
+            setColor(UIKit.CARD_HI)
+            setStroke(dp(1), UIKit.CARD_LINE)
+        }
+        return TextView(this).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            textSize = 12.5f
+            setTextColor(UIKit.TEXT)
+            background = bg
+        }
+    }
+
+    /** 收起菜单：pop 动画后 dismiss */
+    private fun dismissMenu() {
+        val popup = styleMenu ?: return
+        if (dismissing) return
+        dismissing = true
+        val content = popup.contentView
+        IOSMotion.popOut(content) {
+            popup.dismiss()
+            styleMenu = null
+        }
+    }
+
+    /** 隐藏字幕条（iOS 退出动效） */
     fun hideBar() {
         handler.post {
-            try {
-                containerView?.let { wm.removeView(it) }
-            } catch (e: Exception) {
-            }
-            containerView = null
-            textView = null
+            val c = containerView ?: return@post
+            c.animate()
+                .alpha(0f)
+                .translationY(dp(16).toFloat())
+                .setDuration(IOSMotion.FAST_MS)
+                .setInterpolator(IOSMotion.ACCELERATE)
+                .withEndAction {
+                    try {
+                        c.let { wm.removeView(it) }
+                    } catch (e: Exception) {
+                    }
+                    containerView = null
+                    textView = null
+                }
+                .start()
         }
     }
 
     private fun postText(text: String) {
         handler.post {
-            textView?.text = text
+            textView?.let {
+                if (it.text?.toString() != text) {
+                    IOSMotion.crossfadeText(it, text)
+                }
+            }
         }
     }
 

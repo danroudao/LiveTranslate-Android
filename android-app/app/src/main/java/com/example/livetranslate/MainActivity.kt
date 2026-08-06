@@ -13,9 +13,8 @@ import android.os.Bundle
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
+import android.view.View
 import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -32,6 +31,8 @@ import com.example.livetranslate.model.ModelRepository
 import com.example.livetranslate.model.SettingsStore
 import com.example.livetranslate.net.LlmTranslator
 import com.example.livetranslate.pipeline.CaptureService
+import com.example.livetranslate.ui.IOSMotion
+import com.example.livetranslate.ui.UIKit
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), CaptureService.Listener {
@@ -39,13 +40,17 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private lateinit var statusView: TextView
     private lateinit var asrView: TextView
     private lateinit var tlView: TextView
-    private lateinit var btnStart: Button
-    private lateinit var btnTestAudio: Button
+    private lateinit var btnStart: View
+    private lateinit var btnTestAudio: View
     private lateinit var etAsrUrl: EditText
-    private lateinit var asrModeSpinner: Spinner
     private lateinit var modelSpinner: Spinner
     private lateinit var store: SettingsStore
     private var tts: TextToSpeech? = null
+    private var asrModeSelected = 0
+
+    // 运行状态指示（头部呼吸圆点）
+    private var statusDot: View? = null
+    private var statusText: TextView? = null
 
     private val projectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -65,13 +70,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         )
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
-        setContentView(buildUi())
+        val scroll = buildUi()
+        setContentView(scroll)
         CaptureService.listener = this
         etAsrUrl.setText(store.asrUrl)
         refreshModelSpinner()
 
-        btnStart.setOnClickListener { ensurePermissionsAndStart() }
-        btnTestAudio.setOnClickListener { playTestAudio() }
+        // 页面进入动效：整体淡入 + 上滑（iOS decelerate）
+        IOSMotion.enter(scroll, 420, 24f)
 
         // 支持 adb 注入：am start --es DEEPSEEK_KEY sk-xxx
         intent.getStringExtra("DEEPSEEK_KEY")?.let { key ->
@@ -102,103 +108,193 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private fun buildUi(): ScrollView {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(24), dp(16), dp(16))
+            setPadding(dp(16), dp(12), dp(16), dp(24))
+            setBackgroundColor(UIKit.BG)
         }
-        fun tv(s: String, size: Float, bold: Boolean = false) = TextView(this).apply {
-            text = s
-            textSize = size
-            if (bold) setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+
+        // ── 头部：大标题 + 状态指示 + 版本徽章 ──
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(8), dp(4), dp(4))
         }
-        root.addView(tv("LiveTranslate Android  v0.7.1", 20f, true))
-        root.addView(tv("Phase 1: 模型管理 + 通知栏字幕", 13f))
+        header.addView(TextView(this).apply {
+            text = "LiveTranslate"
+            textSize = 27f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(UIKit.TEXT)
+        })
+        header.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+        })
+        statusDot = UIKit.statusDot(this, UIKit.TEXT_TERTIARY, 8)
+        header.addView(statusDot)
+        statusText = TextView(this).apply {
+            text = "待机"
+            textSize = 12f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(6), 0, dp(10), 0)
+        }
+        header.addView(statusText)
+        header.addView(TextView(this).apply {
+            text = "v0.8.0"
+            textSize = 11f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            gravity = Gravity.CENTER
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 9)
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        })
+        root.addView(header)
+        root.addView(TextView(this).apply {
+            text = "实时音频翻译 · 悬浮字幕"
+            textSize = 13f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(4), 0, dp(4), dp(4))
+        })
 
-        root.addView(tv("远程 ASR 服务器地址", 14f))
-        etAsrUrl = EditText(this)
-        root.addView(etAsrUrl)
+        // ── 主操作卡片 ──
+        root.addView(UIKit.sectionLabel(this, "操作"))
+        val actionCard = UIKit.card(this)
+        btnStart = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY) {
+            ensurePermissionsAndStart()
+        }
+        actionCard.addView(btnStart)
+        btnTestAudio = UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
+            playTestAudio()
+        }
+        actionCard.addView(btnTestAudio.apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(10)
+        })
+        val btnAccessibility = UIKit.iosButton(
+            this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44
+        )
+        btnAccessibility.setOnClickListener {
+            if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isActive) {
+                if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isVisible) {
+                    com.example.livetranslate.pipeline.SubtitleAccessibilityService.hideSubtitleBar()
+                    appendStatus("字幕条已隐藏（再次点击显示）")
+                    btnAccessibility.text = "③ 无障碍字幕条"
+                } else {
+                    com.example.livetranslate.pipeline.SubtitleAccessibilityService.showSubtitleBar()
+                    appendStatus("字幕条已显示 ✓（屏幕底部）")
+                    btnAccessibility.text = "③ 无障碍字幕条（已显示）"
+                }
+            } else {
+                appendStatus("请开启「LiveTranslate 字幕条」无障碍服务后返回")
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }
+        actionCard.addView(btnAccessibility.apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(10)
+        })
+        root.addView(actionCard)
 
-        root.addView(tv("ASR 引擎模式", 14f))
-        asrModeSpinner = Spinner(this)
-        asrModeSpinner.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_item,
-            listOf("远程 ASR（需服务器）", "本地 SenseVoice（离线）")
-        ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-        root.addView(asrModeSpinner)
+        // ── ASR 引擎卡片 ──
+        root.addView(UIKit.sectionLabel(this, "ASR 引擎"))
+        val asrCard = UIKit.card(this)
+        asrCard.addView(UIKit.segmentedControl(
+            this,
+            listOf("远程 ASR", "本地 SenseVoice"),
+            asrModeSelected
+        ) { pos -> asrModeSelected = pos })
+        asrCard.addView(TextView(this).apply {
+            text = "服务器地址"
+            textSize = 12f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(14), dp(2), dp(6))
+        })
+        etAsrUrl = EditText(this).apply {
+            isSingleLine = true
+            setTextColor(UIKit.TEXT)
+            setHintTextColor(UIKit.TEXT_TERTIARY)
+            textSize = 14f
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 10)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        asrCard.addView(etAsrUrl)
+        root.addView(asrCard)
 
-        // ── 翻译模型管理 ──
-        root.addView(tv("翻译模型（多 API 配置）", 14f))
-        val modelRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        modelSpinner = Spinner(this)
-        modelRow.addView(modelSpinner, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val btnEdit = Button(this).apply { text = "编辑" }
-        val btnAdd = Button(this).apply { text = "新增" }
-        val btnDel = Button(this).apply { text = "删除" }
-        modelRow.addView(btnEdit)
-        modelRow.addView(btnAdd)
-        modelRow.addView(btnDel)
-        root.addView(modelRow)
-
-        btnEdit.setOnClickListener { showModelEditDialog(store.activeModelIndex, store.activeModel()) }
-        btnAdd.setOnClickListener {
+        // ── 翻译模型卡片 ──
+        root.addView(UIKit.sectionLabel(this, "翻译模型"))
+        val modelCard = UIKit.card(this)
+        modelSpinner = Spinner(this).apply {
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 10)
+            setPadding(dp(8), 0, dp(8), 0)
+        }
+        modelCard.addView(modelSpinner)
+        val modelBtnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        val btnEdit = UIKit.pillButton(this, "编辑", matchWidth = true) {
+            showModelEditDialog(store.activeModelIndex, store.activeModel())
+        }
+        val btnAdd = UIKit.pillButton(this, "新增", matchWidth = true) {
             val m = store.activeModel()
             showModelEditDialog(-1, ModelConfig(
                 name = "新模型", apiBase = m.apiBase, apiKey = m.apiKey,
                 model = m.model, targetLanguage = m.targetLanguage,
             ))
         }
-        btnDel.setOnClickListener {
+        val btnDel = UIKit.pillButton(this, "删除", matchWidth = true) {
             val idx = store.activeModelIndex
             store.removeModel(idx)
             refreshModelSpinner()
             appendStatus("已删除模型 #$idx")
         }
-
-        btnStart = Button(this).apply { text = "① 授权并开始捕获翻译" }
-        root.addView(btnStart)
-
-        btnTestAudio = Button(this).apply { text = "② 播放测试语音（英文）" }
-        root.addView(btnTestAudio)
-
-        val btnAccessibility = Button(this).apply {
-            text = "③ 启用无障碍字幕条（免悬浮窗权限）"
-            setOnClickListener {
-                if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isActive) {
-                    if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isVisible) {
-                        com.example.livetranslate.pipeline.SubtitleAccessibilityService.hideSubtitleBar()
-                        appendStatus("字幕条已隐藏（再次点击显示）")
-                    } else {
-                        com.example.livetranslate.pipeline.SubtitleAccessibilityService.showSubtitleBar()
-                        appendStatus("字幕条已显示 ✓（屏幕底部）")
-                    }
-                } else {
-                    appendStatus("请开启「LiveTranslate 字幕条」无障碍服务后返回")
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            }
+        for ((i, b) in listOf(btnEdit, btnAdd, btnDel).withIndex()) {
+            modelBtnRow.addView(b, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                if (i > 0) marginStart = dp(8)
+            })
         }
-        root.addView(btnAccessibility)
+        modelCard.addView(modelBtnRow)
+        root.addView(modelCard)
 
+        // ── 工具卡片 ──
+        root.addView(UIKit.sectionLabel(this, "工具"))
+        val toolCard = UIKit.card(this, padding = 10)
         val toolRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val btnModels = Button(this).apply { text = "模型管理" }
-        val btnBench = Button(this).apply { text = "基准测试" }
-        toolRow.addView(btnModels, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        toolRow.addView(btnBench, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(toolRow)
-        btnModels.setOnClickListener { showModelManagerDialog() }
-        btnBench.setOnClickListener { runBenchmark() }
+        val btnModels = UIKit.pillButton(this, "模型管理", matchWidth = true) { showModelManagerDialog() }
+        val btnBench = UIKit.pillButton(this, "基准测试", matchWidth = true) { runBenchmark() }
+        toolRow.addView(btnModels, LinearLayout.LayoutParams(0, dp(38), 1f))
+        toolRow.addView(btnBench, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+            marginStart = dp(10)
+        })
+        toolCard.addView(toolRow)
+        root.addView(toolCard)
 
-        asrView = tv("", 15f).apply { setTextColor(0xFFAAAAAA.toInt()) }
-        tlView = tv("", 18f).apply { setTextColor(0xFFFFFFFF.toInt()) }
-        statusView = tv("", 12f).apply { setTextColor(0xFF66BB66.toInt()) }
-        root.addView(asrView)
-        root.addView(tlView)
-        root.addView(statusView)
+        // ── 状态卡片 ──
+        root.addView(UIKit.sectionLabel(this, "状态"))
+        val statusCard = UIKit.card(this)
+        asrView = TextView(this).apply {
+            textSize = 14f
+            setTextColor(0xFFAAAAAA.toInt())
+            setPadding(0, dp(2), 0, dp(6))
+        }
+        tlView = TextView(this).apply {
+            textSize = 17f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(0, 0, 0, dp(8))
+        }
+        statusView = TextView(this).apply {
+            textSize = 11.5f
+            setTextColor(0xFF66BB66.toInt())
+            typeface = android.graphics.Typeface.MONOSPACE
+            setLineSpacing(0f, 1.15f)
+        }
+        statusCard.addView(asrView)
+        statusCard.addView(tlView)
+        statusCard.addView(statusView)
+        root.addView(statusCard)
 
         return ScrollView(this).apply { addView(root) }
     }
 
     private fun refreshModelSpinner() {
         val models = store.models.ifEmpty { listOf(store.activeModel()) }
-        val names = models.map { it.name + " · " + it.model }
+        val names = models.map { it.name + " · " + it.model + "  ▾" }
         modelSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, names).apply {
             setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
@@ -209,6 +305,21 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private fun currentModelFromSpinner(): ModelConfig {
         val list = store.models.ifEmpty { listOf(store.activeModel()) }
         return list[modelSpinner.selectedItemPosition.coerceIn(0, list.size - 1)]
+    }
+
+    /** 服务运行状态 → 头部呼吸圆点 */
+    private fun setRunning(running: Boolean) {
+        runOnUiThread {
+            statusDot?.background = UIKit.roundedBg(
+                this, if (running) UIKit.GREEN else UIKit.TEXT_TERTIARY, 4)
+            statusText?.text = if (running) "运行中" else "待机"
+            if (running) {
+                IOSMotion.breathe(statusDot ?: return@runOnUiThread)
+            } else {
+                statusDot?.animate()?.cancel()
+                statusDot?.alpha = 1f
+            }
+        }
     }
 
     // ---------- 模型编辑对话框（对应原项目 ModelEditDialog） ----------
@@ -222,20 +333,32 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             val et = EditText(this@MainActivity).apply {
                 setText(value)
                 isSingleLine = singleLine
+                textSize = 14f
+                setTextColor(UIKit.TEXT)
+                background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 8)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
             }
-            container.addView(TextView(this@MainActivity).apply { text = label; textSize = 13f })
+            container.addView(TextView(this@MainActivity).apply {
+                text = label; textSize = 12f; setTextColor(UIKit.TEXT_SECONDARY)
+                setPadding(dp(2), dp(10), dp(2), dp(4))
+            })
             container.addView(et)
             return et
         }
         val etName = field("名称", model.name)
         val etBase = field("API Base", model.apiBase)
         val etKey = field("API Key", model.apiKey)
-        val btnFetchModels = Button(this).apply { text = "获取模型列表（自动拉取防输错）" }
+        val btnFetchModels = UIKit.iosButton(this, "获取模型列表（自动拉取防输错）", UIKit.ButtonStyle.SECONDARY, heightDp = 42, small = true)
         container.addView(btnFetchModels)
         val etModel = field("模型名", model.model)
         // 协议选择
-        container.addView(TextView(this).apply { text = "API 协议"; textSize = 13f })
-        val protocolSpinner = Spinner(this)
+        container.addView(TextView(this).apply {
+            text = "API 协议"; textSize = 12f; setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(10), dp(2), dp(4))
+        })
+        val protocolSpinner = Spinner(this).apply {
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 8)
+        }
         protocolSpinner.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_item,
             listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)")
@@ -257,12 +380,12 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 1 -> "anthropic"; 2 -> "gemini"; else -> "openai"
             }
             btnFetchModels.isEnabled = false
-            btnFetchModels.text = "拉取中…"
+            btnFetchModels.alpha = 0.5f
             Thread {
                 val models = fetchModels(base, key, proto)
                 runOnUiThread {
                     btnFetchModels.isEnabled = true
-                    btnFetchModels.text = "获取模型列表（自动拉取防输错）"
+                    btnFetchModels.alpha = 1f
                     if (models.isNullOrEmpty()) {
                         appendStatus("❌ 获取模型列表失败：检查 API Base / Key / 协议")
                     } else {
@@ -277,7 +400,9 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         // 平台预设一键填充（避免手输域名拼写错误，如 apidmx.cn ↔ dmxapi.cn）
         container.addView(TextView(this).apply {
             text = "平台预设（点击自动填充）"
-            textSize = 13f
+            textSize = 12f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(12), dp(2), dp(4))
         })
         val presetRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val presets = listOf(
@@ -288,46 +413,52 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             "Gemini" to Triple("https://generativelanguage.googleapis.com", "gemini", "gemini-2.5-flash"),
         )
         for ((name, cfg) in presets) {
-            val presetBtn = Button(this).apply {
-                text = name
-                textSize = 12f
-                setOnClickListener {
-                    etBase.setText(cfg.first)
-                    etModel.setText(cfg.third)
-                    etTimeout.setText("60")
-                    protocolSpinner.setSelection(
-                        when (cfg.second) { "anthropic" -> 1; "gemini" -> 2; else -> 0 }
-                    )
-                    etName.setText(name)
-                }
+            val presetBtn = UIKit.pillButton(this, name) {
+                etBase.setText(cfg.first)
+                etModel.setText(cfg.third)
+                etTimeout.setText("60")
+                protocolSpinner.setSelection(
+                    when (cfg.second) { "anthropic" -> 1; "gemini" -> 2; else -> 0 }
+                )
+                etName.setText(name)
             }
-            presetRow.addView(presetBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            presetRow.addView(presetBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (presetRow.childCount > 0) marginStart = dp(6)
+            })
         }
         container.addView(presetRow)
         container.addView(TextView(this).apply {
             text = "注意：DMX 域名是 dmxapi.cn（不是 apidmx.cn）"
             textSize = 11f
             setTextColor(0xFFCC7733.toInt())
+            setPadding(dp(2), dp(8), dp(2), 0)
         })
 
         val etExtra = field("附加语言（逗号分隔，如 en,ja）", model.extraLanguages.joinToString(","))
-        val cbStreaming = CheckBox(this).apply { text = "流式输出"; isChecked = model.streaming }
-        val cbJson = CheckBox(this).apply {
+        val cbStreaming = androidx.appcompat.widget.AppCompatCheckBox(this).apply { text = "流式输出"; isChecked = model.streaming }
+        val cbJson = androidx.appcompat.widget.AppCompatCheckBox(this).apply {
             text = "JSON 结构化输出（不支持时自动降级）"
             isChecked = model.jsonResponse
         }
-        val cbNoThink = CheckBox(this).apply { text = "禁用思考 (no_think)"; isChecked = model.noThink }
-        val cbNoSystem = CheckBox(this).apply { text = "无 system 角色 (Qwen-MT 等)"; isChecked = model.noSystemRole }
+        val cbNoThink = androidx.appcompat.widget.AppCompatCheckBox(this).apply { text = "禁用思考 (no_think)"; isChecked = model.noThink }
+        val cbNoSystem = androidx.appcompat.widget.AppCompatCheckBox(this).apply { text = "无 system 角色 (Qwen-MT 等)"; isChecked = model.noSystemRole }
         container.addView(cbStreaming)
         container.addView(cbJson)
         container.addView(cbNoThink)
         container.addView(cbNoSystem)
-        container.addView(TextView(this).apply { text = "系统提示词（留空用默认）"; textSize = 13f })
+        container.addView(TextView(this).apply {
+            text = "系统提示词（留空用默认）"; textSize = 12f; setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(10), dp(2), dp(4))
+        })
         val etPrompt = EditText(this).apply {
             setText(model.systemPrompt ?: "")
             isSingleLine = false
             minLines = 4
             gravity = Gravity.TOP
+            textSize = 14f
+            setTextColor(UIKit.TEXT)
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 8)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
         }
         container.addView(etPrompt)
 
@@ -484,14 +615,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     }
 
     private fun startCapture(resultCode: Int, data: Intent) {
-        android.util.Log.i("MainActivity", "startCapture begin, asrModePos=${asrModeSpinner.selectedItemPosition}")
+        android.util.Log.i("MainActivity", "startCapture begin, asrModePos=$asrModeSelected")
         try {
             store.asrUrl = etAsrUrl.text.toString()
             val model = currentModelFromSpinner()
             store.activeModelIndex = modelSpinner.selectedItemPosition
             // 本地模型目录：<externalFilesDir>/models/sense-voice/
             val localModelDir = java.io.File(filesDir, "models/sense-voice").absolutePath
-            val asrMode = if (asrModeSpinner.selectedItemPosition == 1) "local" else "remote"
+            val asrMode = if (asrModeSelected == 1) "local" else "remote"
             android.util.Log.i("MainActivity", "startCapture: asrMode=$asrMode, modelDir=$localModelDir")
             if (asrMode == "local") {
                 val ok = java.io.File(localModelDir, "model.int8.onnx").exists()
@@ -519,6 +650,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             }
             android.util.Log.i("MainActivity", "startCapture: service started")
             appendStatus("服务已启动（${model.name} / ${model.model}）…")
+            setRunning(true)
         } catch (e: Throwable) {
             android.util.Log.e("MainActivity", "startCapture failed", e)
             appendStatus("❌ 启动失败: ${e.message}")
@@ -546,14 +678,16 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             container.addView(TextView(this@MainActivity).apply {
                 text = "${file.fileName} (${"%.0f".format(file.sizeBytes / 1048576.0)} MB)"
                 textSize = 14f
+                setTextColor(UIKit.TEXT)
             })
             val row = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
             val status = TextView(this@MainActivity).apply { textSize = 13f }
             val progress = android.widget.ProgressBar(this@MainActivity).apply {
                 max = 100
                 visibility = android.view.View.GONE
+                progressTintList = android.content.res.ColorStateList.valueOf(UIKit.IOS_BLUE)
             }
-            val btn = Button(this@MainActivity).apply { text = "下载" }
+            val btn = UIKit.pillButton(this@MainActivity, "下载")
             row.addView(status, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(progress, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f))
             row.addView(btn)
@@ -565,6 +699,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 when (val s = downloader.status(file)) {
                     is ModelDownloader.DownloadStatus.DONE -> {
                         status.text = "✓ 已下载"
+                        status.setTextColor(UIKit.GREEN)
                         btn.text = "删除"
                     }
                     is ModelDownloader.DownloadStatus.PARTIAL -> {
@@ -573,6 +708,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                     }
                     else -> {
                         status.text = "未下载"
+                        status.setTextColor(UIKit.TEXT_SECONDARY)
                         btn.text = "下载"
                     }
                 }
@@ -715,10 +851,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     override fun onStatus(text: String) = appendStatus(text)
 
     override fun onSegment(asrText: String, lang: String) {
-        runOnUiThread { asrView.text = "[$lang] $asrText" }
+        runOnUiThread {
+            IOSMotion.crossfadeText(asrView, "[$lang] $asrText")
+        }
     }
 
     override fun onTranslation(text: String) {
-        runOnUiThread { tlView.text = "译文: $text" }
+        runOnUiThread {
+            IOSMotion.crossfadeText(tlView, "译文: $text")
+        }
     }
 }
