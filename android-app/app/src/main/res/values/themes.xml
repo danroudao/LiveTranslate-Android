@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 浅色 Apple 风格主题：画布 #F5F5F7 + 品牌蓝 #0071E3 + 浅色状态栏 -->
     <style name="Theme.LiveTranslate" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowBackground">#F5F5F7</item>
-        <item name="colorPrimary">#0071E3</item>
-        <item name="colorAccent">#0071E3</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">#F5F5F7</item>
+        <item name="android:windowBackground">#101014</item>
+        <item name="colorPrimary">#3C82F0</item>
     </style>
 </resources>

@@ -38,12 +38,6 @@ object IOSMotion {
     /** 强弹簧（分段控件高亮条跟随） */
     val SPRING_STRONG: TimeInterpolator = OvershootInterpolator(0.6f)
 
-    /** Apple 官网弹簧曲线 cubic-bezier(0.25, 1, 0.5, 1) —— 无过冲的柔和回弹 */
-    val APPLE_SPRING: TimeInterpolator = PathInterpolator(0.25f, 1f, 0.5f, 1f)
-
-    /** Apple 入场曲线 cubic-bezier(0.32, 0.72, 0, 1) */
-    val APPLE_ENTER: TimeInterpolator = PathInterpolator(0.32f, 0.72f, 0f, 1f)
-
     const val PRESS_MS = 100L
     const val FAST_MS = 180L
     const val BASE_MS = 300L
@@ -120,29 +114,12 @@ object IOSMotion {
             .start()
     }
 
-    /** 序列入场：卡片 fade-in-up 逐个错峰浮现（Apple 官网风格） */
-    fun staggerIn(views: List<View>, duration: Long = 520L, staggerMs: Long = 90L, slideDp: Float = 18f) {
-        val density = views.firstOrNull()?.resources?.displayMetrics?.density ?: 1f
-        val dy = slideDp * density
-        views.forEachIndexed { i, v ->
-            v.alpha = 0f
-            v.translationY = dy
-            v.animate()
-                .alpha(1f)
-                .translationY(0f)
-                .setDuration(duration)
-                .setStartDelay(i * staggerMs)
-                .setInterpolator(APPLE_ENTER)
-                .start()
-        }
-    }
-
     /** 按压反馈：快速缩小（按下时调用） */
     fun press(v: View) {
         v.animate().cancel()
         v.animate()
-            .scaleX(0.97f)
-            .scaleY(0.97f)
+            .scaleX(0.96f)
+            .scaleY(0.96f)
             .setDuration(PRESS_MS)
             .setInterpolator(STANDARD)
             .start()
@@ -154,7 +131,7 @@ object IOSMotion {
             .scaleX(1f)
             .scaleY(1f)
             .setDuration(BASE_MS)
-            .setInterpolator(APPLE_SPRING)
+            .setInterpolator(SPRING)
             .start()
     }
 

@@ -187,7 +187,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                y = dp(180)
+                y = dp(240)
             }
             try {
                 wm.addView(v, lp)
@@ -235,13 +235,12 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         dismissing = false
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(16))
+            setPadding(dp(16), dp(12), dp(16), dp(14))
             background = GradientDrawable().apply {
-                cornerRadius = dp(24).toFloat()
-                setColor(UIKit.GLASS_STRONG)          // 白色毛玻璃 rgba(255,255,255,0.92)
-                setStroke(dp(1), 0x26FFFFFF.toInt())  // 白色 hairline
+                cornerRadius = dp(18).toFloat()
+                setColor(0xF21E1E23.toInt())           // 毛玻璃感深色
+                setStroke(dp(1), 0x26FFFFFF.toInt())   // 顶部高光描边
             }
-            elevation = dp(14).toFloat()
         }
 
         // ── 预设模板行（高清 / 夜览 / 极简）──
@@ -298,7 +297,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         val sizeVal = TextView(context).apply {
             text = "${effectiveFontSize().toInt()}sp"
             textSize = 14f
-            setTextColor(UIKit.TEXT)
+            setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }
         val plusBtn = UIKit.pillButton(context, "+", matchWidth = true)
@@ -312,7 +311,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         // ── 字体 ──
         content.addView(rowLabel("字体"))
         val fontSpinner = Spinner(context).apply {
-            background = UIKit.roundedBg(context, UIKit.INPUT_BG, 10)
+            background = UIKit.roundedBg(context, UIKit.CARD_HI, 9)
         }
         fontSpinner.adapter = ArrayAdapter(
             context, android.R.layout.simple_spinner_item,
@@ -405,12 +404,12 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         }
     }
 
-    /** 预设胶囊按钮（白色毛玻璃 + hairline） */
+    /** 预设胶囊按钮 */
     private fun presetPill(text: String): TextView {
         val bg = GradientDrawable().apply {
-            cornerRadius = dp(12).toFloat()
-            setColor(0xE6FFFFFF.toInt())
-            setStroke(dp(1), UIKit.HAIRLINE)
+            cornerRadius = dp(10).toFloat()
+            setColor(UIKit.CARD_HI)
+            setStroke(dp(1), UIKit.CARD_LINE)
         }
         return TextView(context).apply {
             this.text = text

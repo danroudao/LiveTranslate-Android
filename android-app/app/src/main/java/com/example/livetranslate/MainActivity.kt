@@ -14,14 +14,13 @@ import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
 import android.view.View
-import android.view.WindowInsetsController
 import android.widget.ArrayAdapter
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.example.livetranslate.benchmark.BenchmarkRunner
@@ -36,16 +35,6 @@ import com.example.livetranslate.ui.IOSMotion
 import com.example.livetranslate.ui.UIKit
 import java.util.Locale
 
-/**
- * LiveTranslate 主界面 —— Apple 官网 / Block Studio 风格 v0.9.0
- *
- * 设计语言：
- *  - Aurora & Glass：极光光球动态背景 + 毛玻璃 squircle 卡片
- *  - Bento Grid：模块化卡片网格，24px+ 宽敞间距
- *  - Big Type：大标题 700 字重 / 注释 #86868B / 字距微缩
- *  - 品牌蓝 #0071E3 主按钮 / 浅灰 #E5E5EA 次级按钮
- *  - 弹簧物理动效 cubic-bezier(0.25,1,0.5,1) + 卡片序列入场
- */
 class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     private lateinit var statusView: TextView
@@ -75,22 +64,20 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 保留强制深色模式（UI 手册约定：防止 DayNight 浅色系统下文字与背景融合）。
-        // 本页面全部 View 显式浅色配色，不受影响；系统弹窗使用 LightDialogAlert 浅色主题。
+        // 强制深色模式：UI 按深色背景设计，浅色系统下文字会与背景融合
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
             androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
         )
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
-        val content = buildUi()
-        setContentView(content.view)
-        applyLightSystemBars()
+        val scroll = buildUi()
+        setContentView(scroll)
         CaptureService.listener = this
         etAsrUrl.setText(store.asrUrl)
         refreshModelSpinner()
 
-        // 页面进入动效：卡片序列 fade-in-up（Apple 风格错峰入场）
-        IOSMotion.staggerIn(content.enterViews, 520L, 90L)
+        // 页面进入动效：整体淡入 + 上滑（iOS decelerate）
+        IOSMotion.enter(scroll, 420, 24f)
 
         // 支持 adb 注入：am start --es DEEPSEEK_KEY sk-xxx
         intent.getStringExtra("DEEPSEEK_KEY")?.let { key ->
@@ -110,202 +97,140 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
     }
 
-    /** 浅色状态栏：深色图标 + 透明背景（Apple 浅色页面） */
-    private fun applyLightSystemBars() {
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = UIKit.BG
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.insetsController?.setSystemBarsAppearance(
-                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-            )
-            window.insetsController?.setSystemBarsAppearance(
-                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
-                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-        }
-    }
-
     override fun onDestroy() {
         CaptureService.listener = null
         tts?.shutdown()
         super.onDestroy()
     }
 
-    // ---------- UI：Bento Grid ----------
+    // ---------- UI ----------
 
-    /** 根容器：极光背景层 + 内容层（记录入场动画目标） */
-    class ContentRoot(root: FrameLayout) {
-        val view: FrameLayout = root
-        val enterViews = mutableListOf<View>()
-    }
-
-    private fun buildUi(): ContentRoot {
-        val root = FrameLayout(this).apply {
+    private fun buildUi(): ScrollView {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(24))
             setBackgroundColor(UIKit.BG)
         }
-        // 极光弥散背景（光球层）
-        root.addView(UIKit.AuroraView(this), FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(28))
-        }
-        val enterViews = mutableListOf<View>()
-        val scroll = ScrollView(this).apply {
-            overScrollMode = View.OVER_SCROLL_NEVER
-            addView(content)
-        }
-        root.addView(scroll, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-
-        fun enter(v: View) = enterViews.also { it.add(v) }
-
-        // ── 头部：Big Type 大标题 + 状态指示 + 版本徽章 ──
+        // ── 头部：大标题 + 状态指示 + 版本徽章 ──
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(10), dp(4), dp(2))
+            setPadding(dp(4), dp(8), dp(4), dp(4))
         }
-        header.addView(UIKit.bigTitle(this, "LiveTranslate", 32f))
+        header.addView(TextView(this).apply {
+            text = "LiveTranslate"
+            textSize = 27f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(UIKit.TEXT)
+        })
         header.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
-        statusDot = UIKit.statusDot(this, UIKit.TEXT_TERTIARY, 9)
+        statusDot = UIKit.statusDot(this, UIKit.TEXT_TERTIARY, 8)
         header.addView(statusDot)
         statusText = TextView(this).apply {
             text = "待机"
-            textSize = 12.5f
+            textSize = 12f
             setTextColor(UIKit.TEXT_SECONDARY)
-            setPadding(dp(7), 0, dp(12), 0)
+            setPadding(dp(6), 0, dp(10), 0)
         }
         header.addView(statusText)
         header.addView(TextView(this).apply {
-            text = "v0.9.0"
+            text = "v0.8.0"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
-            background = UIKit.roundedBg(this@MainActivity, 0xCCFFFFFF.toInt(), 10)
-            elevation = dp(2).toFloat()
-            setPadding(dp(11), dp(5), dp(11), dp(5))
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 9)
+            setPadding(dp(10), dp(4), dp(10), dp(4))
         })
-        enter(header)
-        content.addView(header)
+        root.addView(header)
+        root.addView(TextView(this).apply {
+            text = "实时音频翻译 · 悬浮字幕"
+            textSize = 13f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(4), 0, dp(4), dp(4))
+        })
 
-        val sub = UIKit.subtitle(this, "实时音频翻译 · 悬浮字幕", 14.5f)
-        sub.setPadding(dp(4), dp(2), dp(4), dp(6))
-        enter(sub)
-        content.addView(sub)
-
-        // ── Bento Row 1：主操作区（左大卡 + 右列双小卡） ──
-        val bentoRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.TOP
-        }
-
-        // 左大卡：开始翻译（品牌蓝）
-        val startCard = UIKit.card(this, radiusDp = 26, padding = 22).apply {
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        btnStart = UIKit.iosButton(this, "开始翻译", UIKit.ButtonStyle.PRIMARY, heightDp = 56) {
+        // ── 主操作卡片 ──
+        root.addView(UIKit.sectionLabel(this, "操作"))
+        val actionCard = UIKit.card(this)
+        btnStart = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY) {
             ensurePermissionsAndStart()
         }
-        startCard.addView(btnStart)
-        startCard.addView(UIKit.subtitle(this, "捕获系统音频 · 实时翻译", 12.5f).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(10), 0, 0)
-        })
-        bentoRow.addView(startCard, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.15f))
-
-        // 右列：测试语音 + 字幕条
-        val rightCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.85f)
-            setPadding(dp(12), 0, 0, 0)
-        }
-        val testCard = UIKit.card(this, radiusDp = 22, padding = 14).apply {
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-        }
-        btnTestAudio = UIKit.iosButton(this, "测试语音", UIKit.ButtonStyle.SECONDARY, heightDp = 44, small = true) {
+        actionCard.addView(btnStart)
+        btnTestAudio = UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
             playTestAudio()
         }
-        testCard.addView(btnTestAudio)
-        testCard.addView(UIKit.subtitle(this, "内置英文样例", 11.5f).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, 0)
+        actionCard.addView(btnTestAudio.apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(10)
         })
-        rightCol.addView(testCard)
-
-        val accCard = UIKit.card(this, radiusDp = 22, padding = 14).apply {
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-        }
-        val btnAccessibility = UIKit.iosButton(this, "字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44, small = true)
+        val btnAccessibility = UIKit.iosButton(
+            this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44
+        )
         btnAccessibility.setOnClickListener {
             if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isActive) {
                 if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isVisible) {
                     com.example.livetranslate.pipeline.SubtitleAccessibilityService.hideSubtitleBar()
                     appendStatus("字幕条已隐藏（再次点击显示）")
-                    btnAccessibility.text = "字幕条"
+                    btnAccessibility.text = "③ 无障碍字幕条"
                 } else {
                     com.example.livetranslate.pipeline.SubtitleAccessibilityService.showSubtitleBar()
                     appendStatus("字幕条已显示 ✓（屏幕底部）")
-                    btnAccessibility.text = "字幕条 ✓"
+                    btnAccessibility.text = "③ 无障碍字幕条（已显示）"
                 }
             } else {
                 appendStatus("请开启「LiveTranslate 字幕条」无障碍服务后返回")
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
         }
-        accCard.addView(btnAccessibility)
-        accCard.addView(UIKit.subtitle(this, "无障碍免悬浮窗权限", 11.5f).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, 0)
+        actionCard.addView(btnAccessibility.apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(10)
         })
-        rightCol.addView(accCard, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(12)
-        })
-        bentoRow.addView(rightCol)
-        enter(bentoRow)
-        content.addView(bentoRow)
+        root.addView(actionCard)
 
-        // ── ASR 引擎卡（全宽） ──
+        // ── ASR 引擎卡片 ──
+        root.addView(UIKit.sectionLabel(this, "ASR 引擎"))
         val asrCard = UIKit.card(this)
-        enter(asrCard)
         asrCard.addView(UIKit.segmentedControl(
             this,
             listOf("远程 ASR", "本地 SenseVoice"),
             asrModeSelected
         ) { pos -> asrModeSelected = pos })
-        asrCard.addView(UIKit.subtitle(this, "服务器地址", 12f).apply {
-            setPadding(dp(2), dp(20), dp(2), dp(8))
+        asrCard.addView(TextView(this).apply {
+            text = "服务器地址"
+            textSize = 12f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(14), dp(2), dp(6))
         })
-        etAsrUrl = UIKit.appleInput(this, "http://172.17.0.1:8765", store.asrUrl)
+        etAsrUrl = EditText(this).apply {
+            isSingleLine = true
+            setTextColor(UIKit.TEXT)
+            setHintTextColor(UIKit.TEXT_TERTIARY)
+            textSize = 14f
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 10)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
         asrCard.addView(etAsrUrl)
-        content.addView(asrCard)
+        root.addView(asrCard)
 
-        // ── 翻译模型卡（全宽） ──
+        // ── 翻译模型卡片 ──
+        root.addView(UIKit.sectionLabel(this, "翻译模型"))
         val modelCard = UIKit.card(this)
-        enter(modelCard)
-        content.addView(modelCard)
         modelSpinner = Spinner(this).apply {
-            background = UIKit.roundedBg(this@MainActivity, UIKit.INPUT_BG, 14)
-            setPadding(dp(10), 0, dp(10), 0)
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 10)
+            setPadding(dp(8), 0, dp(8), 0)
         }
         modelCard.addView(modelSpinner)
         val modelBtnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, 0)
+            setPadding(0, dp(10), 0, 0)
         }
         val btnEdit = UIKit.pillButton(this, "编辑", matchWidth = true) {
             showModelEditDialog(store.activeModelIndex, store.activeModel())
         }
-        val btnAdd = UIKit.iosButton(this, "新增", UIKit.ButtonStyle.PRIMARY, heightDp = 40, small = true, matchWidth = true) {
+        val btnAdd = UIKit.pillButton(this, "新增", matchWidth = true) {
             val m = store.activeModel()
             showModelEditDialog(-1, ModelConfig(
                 name = "新模型", apiBase = m.apiBase, apiKey = m.apiKey,
@@ -319,97 +244,59 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             appendStatus("已删除模型 #$idx")
         }
         for ((i, b) in listOf(btnEdit, btnAdd, btnDel).withIndex()) {
-            modelBtnRow.addView(b, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-                if (i > 0) marginStart = dp(9)
+            modelBtnRow.addView(b, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                if (i > 0) marginStart = dp(8)
             })
         }
         modelCard.addView(modelBtnRow)
+        root.addView(modelCard)
 
-        // ── Bento Row 2：工具卡 ──
-        val toolRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        val modelsTool = UIKit.card(this, radiusDp = 22, padding = 16)
-        modelsTool.gravity = Gravity.CENTER_VERTICAL
-        modelsTool.addView(TextView(this).apply {
-            text = "🗂  模型管理"
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(UIKit.TEXT)
+        // ── 工具卡片 ──
+        root.addView(UIKit.sectionLabel(this, "工具"))
+        val toolCard = UIKit.card(this, padding = 10)
+        val toolRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val btnModels = UIKit.pillButton(this, "模型管理", matchWidth = true) { showModelManagerDialog() }
+        val btnBench = UIKit.pillButton(this, "基准测试", matchWidth = true) { runBenchmark() }
+        toolRow.addView(btnModels, LinearLayout.LayoutParams(0, dp(38), 1f))
+        toolRow.addView(btnBench, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+            marginStart = dp(10)
         })
-        modelsTool.addView(UIKit.subtitle(this, "模型下载 · 断点续传", 12f).apply {
-            setPadding(0, dp(6), 0, dp(2))
-        })
-        modelsTool.setOnClickListener { showModelManagerDialog() }
-        toolRow.addView(modelsTool, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        toolCard.addView(toolRow)
+        root.addView(toolCard)
 
-        val benchTool = UIKit.card(this, radiusDp = 22, padding = 16)
-        benchTool.gravity = Gravity.CENTER_VERTICAL
-        benchTool.addView(TextView(this).apply {
-            text = "📊  基准测试"
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(UIKit.TEXT)
-        })
-        benchTool.addView(UIKit.subtitle(this, "延迟 · 成功率", 12f).apply {
-            setPadding(0, dp(6), 0, dp(2))
-        })
-        benchTool.setOnClickListener { runBenchmark() }
-        toolRow.addView(benchTool, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginStart = dp(12)
-        })
-        enter(toolRow)
-        content.addView(toolRow)
-
-        // ── 状态卡（全宽） ──
+        // ── 状态卡片 ──
+        root.addView(UIKit.sectionLabel(this, "状态"))
         val statusCard = UIKit.card(this)
-        enter(statusCard)
-        content.addView(statusCard)
         asrView = TextView(this).apply {
             textSize = 14f
-            setTextColor(UIKit.TEXT_SECONDARY)
+            setTextColor(0xFFAAAAAA.toInt())
             setPadding(0, dp(2), 0, dp(6))
         }
         tlView = TextView(this).apply {
-            textSize = 16.5f
+            textSize = 17f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(UIKit.TEXT)
-            setPadding(0, 0, 0, dp(10))
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(0, 0, 0, dp(8))
         }
         statusView = TextView(this).apply {
-            textSize = 12.5f
-            setTextColor(0xFF6E6E73.toInt())
+            textSize = 11.5f
+            setTextColor(0xFF66BB66.toInt())
             typeface = android.graphics.Typeface.MONOSPACE
-            setLineSpacing(0f, 1.2f)
+            setLineSpacing(0f, 1.15f)
         }
         statusCard.addView(asrView)
         statusCard.addView(tlView)
-        // 分割 hairline
-        statusCard.addView(View(this).apply {
-            background = UIKit.roundedBg(this@MainActivity, 0x0D000000.toInt(), 1)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
-        })
-        statusCard.addView(statusView, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(10)
-        })
+        statusCard.addView(statusView)
+        root.addView(statusCard)
 
-        return ContentRoot(root).also { it.enterViews.addAll(enterViews) }
+        return ScrollView(this).apply { addView(root) }
     }
 
     private fun refreshModelSpinner() {
         val models = store.models.ifEmpty { listOf(store.activeModel()) }
         val names = models.map { it.name + " · " + it.model + "  ▾" }
-        // 浅色 Apple 风格：自定义 adapter 强制深色文字（MODE_NIGHT_YES 下系统 item 是白字会与浅底融合）
-        modelSpinner.adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, names) {
-            override fun getView(pos: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                val tv = super.getView(pos, convertView, parent) as TextView
-                tv.setTextColor(UIKit.TEXT)
-                tv.textSize = 15f
-                tv.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
-                return tv
-            }
+        modelSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, names).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
         val idx = store.activeModelIndex.coerceIn(0, names.size - 1)
         modelSpinner.setSelection(idx)
@@ -424,7 +311,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private fun setRunning(running: Boolean) {
         runOnUiThread {
             statusDot?.background = UIKit.roundedBg(
-                this, if (running) UIKit.GREEN else UIKit.TEXT_TERTIARY, 5)
+                this, if (running) UIKit.GREEN else UIKit.TEXT_TERTIARY, 4)
             statusText?.text = if (running) "运行中" else "待机"
             if (running) {
                 IOSMotion.breathe(statusDot ?: return@runOnUiThread)
@@ -435,18 +322,25 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
     }
 
-    // ---------- 模型编辑对话框（浅色 Apple 主题） ----------
+    // ---------- 模型编辑对话框（对应原项目 ModelEditDialog） ----------
 
     private fun showModelEditDialog(index: Int, model: ModelConfig) {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(14), dp(22), 0)
+            setPadding(dp(20), dp(12), dp(20), 0)
         }
         fun field(label: String, value: String, singleLine: Boolean = true): EditText {
-            val et = UIKit.appleInput(this@MainActivity, value = value, singleLine = singleLine)
+            val et = EditText(this@MainActivity).apply {
+                setText(value)
+                isSingleLine = singleLine
+                textSize = 14f
+                setTextColor(UIKit.TEXT)
+                background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 8)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+            }
             container.addView(TextView(this@MainActivity).apply {
-                text = label; textSize = 12.5f; setTextColor(UIKit.TEXT_SECONDARY)
-                setPadding(dp(2), dp(12), dp(2), dp(5))
+                text = label; textSize = 12f; setTextColor(UIKit.TEXT_SECONDARY)
+                setPadding(dp(2), dp(10), dp(2), dp(4))
             })
             container.addView(et)
             return et
@@ -459,23 +353,16 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         val etModel = field("模型名", model.model)
         // 协议选择
         container.addView(TextView(this).apply {
-            text = "API 协议"; textSize = 12.5f; setTextColor(UIKit.TEXT_SECONDARY)
-            setPadding(dp(2), dp(12), dp(2), dp(5))
+            text = "API 协议"; textSize = 12f; setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(10), dp(2), dp(4))
         })
         val protocolSpinner = Spinner(this).apply {
-            background = UIKit.roundedBg(this@MainActivity, UIKit.INPUT_BG, 12)
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 8)
         }
-        protocolSpinner.adapter = object : ArrayAdapter<String>(
+        protocolSpinner.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_item,
             listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)")
-        ) {
-            override fun getView(pos: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                val tv = super.getView(pos, convertView, parent) as TextView
-                tv.setTextColor(UIKit.TEXT)
-                tv.textSize = 14f
-                return tv
-            }
-        }
+        ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
         protocolSpinner.setSelection(
             when (model.protocol) { "anthropic" -> 1; "gemini" -> 2; else -> 0 }
         )
@@ -510,12 +397,12 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         val etTarget = field("目标语言 (zh/en/ja…)", model.targetLanguage)
         val etCtx = field("上下文轮数", model.contextTurns.toString())
         val etTimeout = field("超时(秒)", model.timeout.toString())
-        // 平台预设一键填充
+        // 平台预设一键填充（避免手输域名拼写错误，如 apidmx.cn ↔ dmxapi.cn）
         container.addView(TextView(this).apply {
             text = "平台预设（点击自动填充）"
-            textSize = 12.5f
+            textSize = 12f
             setTextColor(UIKit.TEXT_SECONDARY)
-            setPadding(dp(2), dp(14), dp(2), dp(5))
+            setPadding(dp(2), dp(12), dp(2), dp(4))
         })
         val presetRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val presets = listOf(
@@ -543,7 +430,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         container.addView(TextView(this).apply {
             text = "注意：DMX 域名是 dmxapi.cn（不是 apidmx.cn）"
             textSize = 11f
-            setTextColor(0xFFC77D2E.toInt())
+            setTextColor(0xFFCC7733.toInt())
             setPadding(dp(2), dp(8), dp(2), 0)
         })
 
@@ -560,8 +447,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         container.addView(cbNoThink)
         container.addView(cbNoSystem)
         container.addView(TextView(this).apply {
-            text = "系统提示词（留空用默认）"; textSize = 12.5f; setTextColor(UIKit.TEXT_SECONDARY)
-            setPadding(dp(2), dp(12), dp(2), dp(5))
+            text = "系统提示词（留空用默认）"; textSize = 12f; setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(10), dp(2), dp(4))
         })
         val etPrompt = EditText(this).apply {
             setText(model.systemPrompt ?: "")
@@ -570,13 +457,13 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             gravity = Gravity.TOP
             textSize = 14f
             setTextColor(UIKit.TEXT)
-            background = UIKit.roundedBg(this@MainActivity, UIKit.INPUT_BG, 12)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 8)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
         }
         container.addView(etPrompt)
 
         val scroll = ScrollView(this).apply { addView(container) }
-        AlertDialog.Builder(this, R.style.LightDialogAlert)
+        AlertDialog.Builder(this)
             .setTitle(if (index < 0) "新增模型" else "编辑模型")
             .setView(scroll)
             .setPositiveButton("保存") { _, _ ->
@@ -667,7 +554,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     /** 模型选择对话框：列表点选填入模型名 */
     private fun showModelPicker(models: List<String>, targetEditText: EditText) {
         val sorted = models.sorted()
-        AlertDialog.Builder(this, R.style.LightDialogAlert)
+        AlertDialog.Builder(this)
             .setTitle("选择模型（共 ${sorted.size} 个）")
             .setItems(sorted.toTypedArray()) { _, which ->
                 targetEditText.setText(sorted[which])
@@ -776,12 +663,12 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         val downloader = ModelDownloader(this)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(14), dp(22), dp(12))
+            setPadding(dp(20), dp(12), dp(20), dp(12))
         }
         container.addView(TextView(this).apply {
             text = "模型存放到应用内部存储（卸载即清）。本地 ASR 需 SenseVoice 模型。"
             textSize = 12f
-            setTextColor(UIKit.TEXT_SECONDARY)
+            setTextColor(0xFF999999.toInt())
         })
 
         val statusViews = mutableMapOf<String, TextView>()
@@ -792,14 +679,13 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 text = "${file.fileName} (${"%.0f".format(file.sizeBytes / 1048576.0)} MB)"
                 textSize = 14f
                 setTextColor(UIKit.TEXT)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             val row = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
             val status = TextView(this@MainActivity).apply { textSize = 13f }
             val progress = android.widget.ProgressBar(this@MainActivity).apply {
                 max = 100
                 visibility = android.view.View.GONE
-                progressTintList = android.content.res.ColorStateList.valueOf(UIKit.BRAND)
+                progressTintList = android.content.res.ColorStateList.valueOf(UIKit.IOS_BLUE)
             }
             val btn = UIKit.pillButton(this@MainActivity, "下载")
             row.addView(status, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -864,7 +750,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
         for (f in ModelRepository.ALL) addRow(f)
 
-        AlertDialog.Builder(this, R.style.LightDialogAlert)
+        AlertDialog.Builder(this)
             .setTitle("模型管理")
             .setView(ScrollView(this).apply { addView(container) })
             .setPositiveButton("关闭", null)
@@ -900,7 +786,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 for (r in summary.results) {
                     sb.append("%dms %s\n  → %s\n".format(r.latencyMs, r.sentence, r.translated.ifEmpty { "[失败]" }))
                 }
-                AlertDialog.Builder(this, R.style.LightDialogAlert)
+                AlertDialog.Builder(this)
                     .setTitle("基准测试结果（${model.model}）")
                     .setMessage(sb.toString())
                     .setPositiveButton("关闭", null)
