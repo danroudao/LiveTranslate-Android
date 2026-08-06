@@ -6,8 +6,13 @@ import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Button
+import android.widget.PopupWindow
+import android.widget.SeekBar
 import android.widget.TextView
 
 /**
@@ -53,6 +58,33 @@ class SubtitleAccessibilityService : AccessibilityService() {
     private val wm: WindowManager by lazy {
         getSystemService(WINDOW_SERVICE) as WindowManager
     }
+    private val store by lazy { com.example.livetranslate.model.SettingsStore(this) }
+    private var style: com.example.livetranslate.model.SubtitleStyle = store.subtitleStyle
+    private var params: WindowManager.LayoutParams? = null
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun applyStyle() {
+        val tv = textView ?: return
+        val c = containerView ?: return
+        val bg = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = dp(style.cornerRadius).toFloat()
+            setColor(android.graphics.Color.argb(style.alpha, 0, 0, 0))
+        }
+        c.background = bg
+        val size = if (style.fontSize > 0) style.fontSize
+                   else com.example.livetranslate.model.SubtitleStyle.autoFontSize(
+                       resources.displayMetrics.widthPixels / resources.displayMetrics.density)
+        val tf = when (style.fontFamily) {
+            "serif" -> android.graphics.Typeface.SERIF
+            "monospace" -> android.graphics.Typeface.MONOSPACE
+            "cursive" -> android.graphics.Typeface.create("cursive", android.graphics.Typeface.NORMAL)
+            "sans-serif-medium" -> android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            else -> android.graphics.Typeface.DEFAULT
+        }
+        tv.typeface = if (style.bold) android.graphics.Typeface.create(tf, android.graphics.Typeface.BOLD) else tf
+        tv.textSize = size
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -66,10 +98,8 @@ class SubtitleAccessibilityService : AccessibilityService() {
         val container = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.argb(210, 0, 0, 0))
         }
         val tv = TextView(this).apply {
-            textSize = 20f
             setTextColor(Color.WHITE)
             setShadowLayer(3f, 0f, 0f, Color.BLACK)
             setPadding(dp(16), dp(10), dp(8), dp(10))
@@ -84,8 +114,22 @@ class SubtitleAccessibilityService : AccessibilityService() {
             // 点击关闭字幕条（服务保持连接，可从主界面重新显示）
             setOnClickListener { hideBar() }
         }
+        val resizeBtn = TextView(this).apply {
+            text = "⤡"
+            textSize = 16f
+            setTextColor(Color.argb(180, 255, 255, 255))
+            setPadding(dp(4), dp(10), dp(8), dp(10))
+            // 抓取边缘调整高度
+            setOnTouchListener { _, event ->
+                handleResize(event)
+                true
+            }
+        }
         container.addView(tv)
         container.addView(closeBtn)
+        container.addView(resizeBtn)
+        // 点击文本区 → 二级菜单（锚定字幕条上方弹出，不占屏幕中心）
+        tv.setOnClickListener { showStyleMenu(container) }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -95,15 +139,127 @@ class SubtitleAccessibilityService : AccessibilityService() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = dp(80)  // 底部安全区上方
+            y = dp(80)  // 底部安全区上方（边缘留白）
         }
         try {
             wm.addView(container, params)
             containerView = container
             textView = tv
+            this.params = params
+            applyStyle()
         } catch (e: Exception) {
             containerView = null
             textView = null
+        }
+    }
+
+    /** 抓取 ⤡ 调整字幕条高度（限高 2/3 屏，无障碍覆盖层限制） */
+    private var resizeStartH = 0
+    private var resizeStartY = 0f
+
+    private fun handleResize(event: MotionEvent) {
+        val lp = params ?: return
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                resizeStartH = if (lp.height > 0) lp.height else containerView?.height ?: 0
+                resizeStartY = event.rawY
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dy = (event.rawY - resizeStartY).toInt()
+                val maxH = (resources.displayMetrics.heightPixels * 0.66f).toInt()
+                lp.height = (resizeStartH + dy).coerceIn(dp(56), maxH)
+                try {
+                    wm.updateViewLayout(containerView, lp)
+                } catch (e: Exception) {
+                }
+            }
+        }
+    }
+
+    /** 二级菜单（锚定字幕条上方） */
+    private var styleMenu: PopupWindow? = null
+
+    private fun showStyleMenu(anchor: View) {
+        styleMenu?.dismiss()
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            setBackgroundColor(Color.argb(245, 30, 30, 35))
+        }
+        fun rowLabel(s: String) = TextView(this).apply {
+            text = s; textSize = 13f; setTextColor(Color.WHITE)
+        }
+        // 透明度
+        content.addView(rowLabel("背景透明度"))
+        val alphaBar = SeekBar(this).apply { max = 255; progress = style.alpha }
+        alphaBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                style = style.copy(alpha = p)
+                store.subtitleStyle = style
+                applyStyle()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+        content.addView(alphaBar)
+        // 字号
+        content.addView(rowLabel("字号"))
+        val sizeRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val minusBtn = Button(this).apply { text = "−" }
+        val sizeVal = TextView(this).apply {
+            text = "20sp"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+        }
+        val plusBtn = Button(this).apply { text = "+" }
+        fun adjust(delta: Float) {
+            var size = (if (style.fontSize > 0) style.fontSize else 20f) + delta
+            size = size.coerceIn(10f, 60f)
+            style = style.copy(fontSize = size)
+            store.subtitleStyle = style
+            sizeVal.text = "${size.toInt()}sp"
+            applyStyle()
+        }
+        minusBtn.setOnClickListener { adjust(-2f) }
+        plusBtn.setOnClickListener { adjust(2f) }
+        sizeRow.addView(minusBtn)
+        sizeRow.addView(sizeVal, android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        sizeRow.addView(plusBtn)
+        content.addView(sizeRow)
+        // 圆角
+        content.addView(rowLabel("圆角"))
+        val cornerBar = SeekBar(this).apply { max = 48; progress = style.cornerRadius }
+        cornerBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                style = style.copy(cornerRadius = p)
+                store.subtitleStyle = style
+                applyStyle()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+        content.addView(cornerBar)
+        // 完成
+        val doneBtn = Button(this).apply { text = "完成" }
+        content.addView(doneBtn)
+        doneBtn.setOnClickListener { styleMenu?.dismiss() }
+
+        val popup = PopupWindow(content, dp(280), WindowManager.LayoutParams.WRAP_CONTENT, true)
+        popup.isOutsideTouchable = true
+        popup.setWindowLayoutType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+        try {
+            // 锚定字幕条上方弹出（不占屏幕中心）
+            popup.showAsDropDown(anchor, 0, -popup.contentView.height - dp(8))
+            styleMenu = popup
+        } catch (e: Exception) {
+            try {
+                popup.showAtLocation(anchor, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, dp(12))
+                styleMenu = popup
+            } catch (e2: Exception) {
+            }
         }
     }
 
@@ -143,5 +299,4 @@ class SubtitleAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 }

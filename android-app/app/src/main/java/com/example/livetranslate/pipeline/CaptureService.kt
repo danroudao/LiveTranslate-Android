@@ -223,7 +223,7 @@ class CaptureService : Service() {
             timeoutSec = model.timeout.toLong(),
             protocol = model.protocol,
         )
-        this.overlay = OverlayManager(this).also { it.show() }
+        this.overlay = OverlayManager(this, com.example.livetranslate.model.SettingsStore(this)).also { it.show() }
         this.extraLanguages = model.extraLanguages
         running = true
         interimActive = false

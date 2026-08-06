@@ -31,6 +31,24 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_VAD_MODE, "silero")!!
         set(value) = prefs.edit().putString(KEY_VAD_MODE, value).apply()
 
+    /** 字幕条样式（悬浮窗 + 无障碍条共享） */
+    var subtitleStyle: SubtitleStyle
+        get() {
+            val raw = prefs.getString(KEY_SUBTITLE_STYLE, null)
+            return if (raw.isNullOrBlank()) SubtitleStyle() else SubtitleStyle.fromJson(org.json.JSONObject(raw))
+        }
+        set(value) = prefs.edit().putString(KEY_SUBTITLE_STYLE, value.toJson().toString()).apply()
+
+    /** 悬浮窗宽度 px（0=自动） */
+    var overlayWidthPx: Int
+        get() = prefs.getInt(KEY_OVERLAY_W, 0)
+        set(value) = prefs.edit().putInt(KEY_OVERLAY_W, value).apply()
+
+    /** 悬浮窗高度 px（0=自动/内容自适应） */
+    var overlayHeightPx: Int
+        get() = prefs.getInt(KEY_OVERLAY_H, 0)
+        set(value) = prefs.edit().putInt(KEY_OVERLAY_H, value).apply()
+
     /** 活动模型；无配置时返回默认 DeepSeek 配置 */
     fun activeModel(): ModelConfig {
         val list = models
@@ -70,6 +88,9 @@ class SettingsStore(context: Context) {
         private const val KEY_ACTIVE_MODEL = "active_model"
         private const val KEY_ASR_URL = "asr_url"
         private const val KEY_VAD_MODE = "vad_mode"
+        private const val KEY_SUBTITLE_STYLE = "subtitle_style"
+        private const val KEY_OVERLAY_W = "overlay_w"
+        private const val KEY_OVERLAY_H = "overlay_h"
 
         /** 默认配置（与 config.yaml 的 translation 段对齐） */
         val DEFAULT_MODEL = ModelConfig(

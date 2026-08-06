@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             textSize = size
             if (bold) setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
         }
-        root.addView(tv("LiveTranslate Android  v0.6.2", 20f, true))
+        root.addView(tv("LiveTranslate Android  v0.6.9", 20f, true))
         root.addView(tv("Phase 1: 模型管理 + 通知栏字幕", 13f))
 
         root.addView(tv("远程 ASR 服务器地址", 14f))
