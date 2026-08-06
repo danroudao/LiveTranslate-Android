@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LiveTranslate</string>
+    <string name="accessibility_desc">在屏幕底部显示实时翻译字幕（原文+译文）。音频仍由 LiveTranslate 捕获与识别，本服务仅负责显示。</string>
+</resources>

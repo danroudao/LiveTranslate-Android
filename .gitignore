@@ -1,0 +1,19 @@
+# Android / Gradle 构建产物
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties
+android-app/.kotlin/
+*.iml
+.idea/
+
+# 大文件与产物（不入库）
+dist/
+models/
+*.apk
+*.aab
+
+# 本地文件
+__pycache__/
+*.pyc
+*.log
