@@ -189,6 +189,8 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 y = dp(240)
             }
+            // 液态玻璃：窗口级背景模糊（API 31+，背后内容真实模糊）
+            com.example.livetranslate.ui.LiquidGlass.blurWindow(lp, 26, context)
             try {
                 wm.addView(v, lp)
                 view = v
@@ -215,12 +217,22 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
 
     private fun applyStyle() {
         val v = view ?: return
-        // 圆角 + 透明度背景
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(style.cornerRadius).toFloat()
-            setColor(Color.argb(style.alpha, 0, 0, 0))
+        // 液态玻璃背景：深蓝灰半透明（透明度随样式）+ 顶部光泽 + 高光描边
+        val radius = dp(style.cornerRadius).toFloat()
+        val base = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(Color.argb(style.alpha, 16, 18, 28))
         }
-        v.background = bg
+        val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0x3DFFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
+            cornerRadius = radius
+        }
+        val ring = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(0x00000000)
+            setStroke(dp(1), 0x73FFFFFF.toInt())
+        }
+        v.background = android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
         originalView?.let { applyFont(it, "original") }
         translationView?.let { applyFont(it, "translation") }
     }
@@ -236,11 +248,10 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(14))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(0xF21E1E23.toInt())           // 毛玻璃感深色
-                setStroke(dp(1), 0x26FFFFFF.toInt())   // 顶部高光描边
-            }
+            // 液态玻璃菜单面板：半透明深色 + 光泽 + 高光描边
+            background = com.example.livetranslate.ui.LiquidGlass.panel(context, 18,
+                com.example.livetranslate.ui.LiquidGlass.GLASS_BASE, 0x33,
+                com.example.livetranslate.ui.LiquidGlass.EDGE_HI)
         }
 
         // ── 预设模板行（高清 / 夜览 / 极简）──
@@ -311,7 +322,9 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         // ── 字体 ──
         content.addView(rowLabel("字体"))
         val fontSpinner = Spinner(context).apply {
-            background = UIKit.roundedBg(context, UIKit.CARD_HI, 9)
+            background = com.example.livetranslate.ui.LiquidGlass.panel(context, 9,
+                base = 0xB826262E.toInt(), sheenAlpha = 0x0E,
+                edgeColor = com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
         }
         fontSpinner.adapter = ArrayAdapter(
             context, android.R.layout.simple_spinner_item,
@@ -387,6 +400,10 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             // 锚定字幕条下方（不占据屏幕中心）
             popup.showAsDropDown(anchor, 0, dp(6))
             styleMenu = popup
+            // 液态玻璃：菜单窗口背景模糊（API 31+，延迟到布局稳定后应用）
+            content.postDelayed({
+                com.example.livetranslate.ui.LiquidGlass.blurPopup(popup, 24, context)
+            }, 160)
             // iOS spring pop 弹出
             IOSMotion.popIn(content)
             android.util.Log.i("OverlayMenu", "popup shown asDropDown")
@@ -396,6 +413,9 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             try {
                 popup.showAtLocation(anchor, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, dp(12))
                 styleMenu = popup
+                content.postDelayed({
+                    com.example.livetranslate.ui.LiquidGlass.blurPopup(popup, 24, context)
+                }, 160)
                 IOSMotion.popIn(content)
                 android.util.Log.i("OverlayMenu", "popup shown atLocation")
             } catch (e2: Exception) {
@@ -404,13 +424,11 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         }
     }
 
-    /** 预设胶囊按钮 */
+    /** 预设胶囊按钮（液态玻璃胶囊） */
     private fun presetPill(text: String): TextView {
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(10).toFloat()
-            setColor(UIKit.CARD_HI)
-            setStroke(dp(1), UIKit.CARD_LINE)
-        }
+        val bg = com.example.livetranslate.ui.LiquidGlass.panel(context, 10,
+            base = 0xB826262E.toInt(), sheenAlpha = 0x10,
+            edgeColor = com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
         return TextView(context).apply {
             this.text = text
             gravity = Gravity.CENTER

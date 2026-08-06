@@ -70,14 +70,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         )
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
-        val scroll = buildUi()
-        setContentView(scroll)
+        val content = buildUi()
+        setContentView(content.view)
         CaptureService.listener = this
         etAsrUrl.setText(store.asrUrl)
         refreshModelSpinner()
 
         // 页面进入动效：整体淡入 + 上滑（iOS decelerate）
-        IOSMotion.enter(scroll, 420, 24f)
+        IOSMotion.enter(content.scroll, 420, 24f)
 
         // 支持 adb 注入：am start --es DEEPSEEK_KEY sk-xxx
         intent.getStringExtra("DEEPSEEK_KEY")?.let { key ->
@@ -105,11 +105,21 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     // ---------- UI ----------
 
-    private fun buildUi(): ScrollView {
+    /** 根容器：极光背景层 + 内容层 */
+    class ContentRoot(val view: android.widget.FrameLayout, val scroll: ScrollView)
+
+    private fun buildUi(): ContentRoot {
+        // 液态玻璃氛围：深色极光背景 + 内容层
+        val frame = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(UIKit.BG)
+        }
+        frame.addView(com.example.livetranslate.ui.LiquidGlass.AuroraView(this),
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(24))
-            setBackgroundColor(UIKit.BG)
         }
 
         // ── 头部：大标题 + 状态指示 + 版本徽章 ──
@@ -137,11 +147,12 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         header.addView(statusText)
         header.addView(TextView(this).apply {
-            text = "v0.8.0"
+            text = "v0.10.0"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
-            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 9)
+            background = com.example.livetranslate.ui.LiquidGlass.panel(this@MainActivity, 9,
+                com.example.livetranslate.ui.LiquidGlass.GLASS_SOFT, 0x12, com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
             setPadding(dp(10), dp(4), dp(10), dp(4))
         })
         root.addView(header)
@@ -289,7 +300,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         statusCard.addView(statusView)
         root.addView(statusCard)
 
-        return ScrollView(this).apply { addView(root) }
+        val scroll = ScrollView(this).apply {
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(root)
+        }
+        frame.addView(scroll, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        return ContentRoot(frame, scroll)
     }
 
     private fun refreshModelSpinner() {

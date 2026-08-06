@@ -71,11 +71,22 @@ class SubtitleAccessibilityService : AccessibilityService() {
     private fun applyStyle() {
         val tv = textView ?: return
         val c = containerView ?: return
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(style.cornerRadius).toFloat()
-            setColor(Color.argb(style.alpha, 0, 0, 0))
+        // 液态玻璃字幕条：深蓝灰半透明（透明度随样式）+ 顶部光泽 + 高光描边
+        val radius = dp(style.cornerRadius).toFloat()
+        val base = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(Color.argb(style.alpha, 16, 18, 28))
         }
-        c.background = bg
+        val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0x3DFFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
+            cornerRadius = radius
+        }
+        val ring = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(0x00000000)
+            setStroke(dp(1), 0x73FFFFFF.toInt())
+        }
+        c.background = android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
         val size = if (style.fontSize > 0) style.fontSize
                    else SubtitleStyle.autoFontSize(
                        resources.displayMetrics.widthPixels / resources.displayMetrics.density)
@@ -151,6 +162,8 @@ class SubtitleAccessibilityService : AccessibilityService() {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             y = dp(80)  // 底部安全区上方（边缘留白）
         }
+        // 液态玻璃：窗口级背景模糊（API 31+）
+        com.example.livetranslate.ui.LiquidGlass.blurWindow(params, 24, this)
         try {
             wm.addView(container, params)
             containerView = container
@@ -206,11 +219,10 @@ class SubtitleAccessibilityService : AccessibilityService() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(14))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(0xF21E1E23.toInt())
-                setStroke(dp(1), 0x26FFFFFF.toInt())
-            }
+            // 液态玻璃菜单面板
+            background = com.example.livetranslate.ui.LiquidGlass.panel(this@SubtitleAccessibilityService, 18,
+                com.example.livetranslate.ui.LiquidGlass.GLASS_BASE, 0x33,
+                com.example.livetranslate.ui.LiquidGlass.EDGE_HI)
         }
 
         // ── 预设模板行 ──
@@ -312,11 +324,17 @@ class SubtitleAccessibilityService : AccessibilityService() {
             // 锚定字幕条上方弹出（不占屏幕中心）
             popup.showAsDropDown(anchor, 0, -popup.contentView.height - dp(8))
             styleMenu = popup
+            content.postDelayed({
+                com.example.livetranslate.ui.LiquidGlass.blurPopup(popup, 24, this)
+            }, 160)
             IOSMotion.popIn(content)
         } catch (e: Exception) {
             try {
                 popup.showAtLocation(anchor, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, dp(12))
                 styleMenu = popup
+                content.postDelayed({
+                    com.example.livetranslate.ui.LiquidGlass.blurPopup(popup, 24, this)
+                }, 160)
                 IOSMotion.popIn(content)
             } catch (e2: Exception) {
             }
@@ -324,11 +342,9 @@ class SubtitleAccessibilityService : AccessibilityService() {
     }
 
     private fun presetPill(text: String): TextView {
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(10).toFloat()
-            setColor(UIKit.CARD_HI)
-            setStroke(dp(1), UIKit.CARD_LINE)
-        }
+        val bg = com.example.livetranslate.ui.LiquidGlass.panel(this, 10,
+            base = 0xB826262E.toInt(), sheenAlpha = 0x10,
+            edgeColor = com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
         return TextView(this).apply {
             this.text = text
             gravity = Gravity.CENTER

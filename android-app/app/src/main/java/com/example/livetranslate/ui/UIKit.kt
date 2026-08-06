@@ -44,14 +44,11 @@ object UIKit {
 
     // ---------- 容器 ----------
 
-    /** 分组卡片：圆角 16dp + #1E1E23 */
-    fun card(context: Context, padding: Int = 14): LinearLayout =
+    /** 液态玻璃卡片：半透明深色 + 顶部光泽 + 高光描边（iOS 26 Liquid Glass） */
+    fun card(context: Context, padding: Int = 14, radiusDp: Int = 16): LinearLayout =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = dp(context, 16).toFloat()
-                setColor(CARD)
-            }
+            background = LiquidGlass.panel(context, radiusDp, LiquidGlass.GLASS_SOFT)
             setPadding(dp(context, padding), dp(context, 14), dp(context, padding), dp(context, 14))
         }
 
@@ -79,7 +76,7 @@ object UIKit {
 
     enum class ButtonStyle { PRIMARY, SECONDARY, DANGER, CHIP }
 
-    /** iOS 风格按钮：圆角 14dp + 按压缩放反馈（0.96 + 松手弹簧回弹） */
+    /** iOS 风格按钮：液态玻璃胶囊 + 按压缩放反馈（0.96 + 松手弹簧回弹） */
     fun iosButton(
         context: Context,
         text: String,
@@ -89,17 +86,36 @@ object UIKit {
         matchWidth: Boolean = true,
         onClick: (() -> Unit)? = null,
     ): TextView {
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(context, if (small) 10 else 14).toFloat()
-            when (style) {
-                ButtonStyle.PRIMARY -> setColor(IOS_BLUE)
-                ButtonStyle.SECONDARY -> setColor(CARD_HI)
-                ButtonStyle.DANGER -> setColor(0x26FF453A.toInt()) // 透明红底
-                ButtonStyle.CHIP -> {
-                    setColor(CARD_HI)
-                    setStroke(dp(context, 1), CARD_LINE)
+        val radius = if (small) dp(context, 10) else dp(context, 14)
+        val bg: android.graphics.drawable.Drawable = when (style) {
+            // 主按钮：品牌蓝 + 顶部光泽 + 高光描边（液态蓝玻璃）
+            ButtonStyle.PRIMARY -> {
+                val base = GradientDrawable().apply {
+                    cornerRadius = radius.toFloat()
+                    setColor(IOS_BLUE)
                 }
+                val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(0x45FFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
+                    cornerRadius = radius.toFloat()
+                }
+                val ring = GradientDrawable().apply {
+                    cornerRadius = radius.toFloat()
+                    setColor(0x00000000)
+                    setStroke(dp(context, 1), 0x66FFFFFF.toInt())
+                }
+                android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
             }
+            // 次级按钮：深色玻璃（半透明白 + 描边）
+            ButtonStyle.SECONDARY -> LiquidGlass.panel(context, if (small) 10 else 14,
+                base = 0xBD26262E.toInt(), sheenAlpha = 0x16, edgeColor = LiquidGlass.EDGE_HI)
+            // 危险：透明红底
+            ButtonStyle.DANGER -> GradientDrawable().apply {
+                cornerRadius = radius.toFloat()
+                setColor(0x26FF453A.toInt())
+            }
+            // 胶囊：玻璃 + 描边
+            ButtonStyle.CHIP -> LiquidGlass.panel(context, if (small) 10 else 14,
+                base = 0xBD26262E.toInt(), sheenAlpha = 0x12, edgeColor = LiquidGlass.EDGE_HI)
         }
         return TextView(context).apply {
             this.text = text
@@ -161,18 +177,16 @@ object UIKit {
         val n = options.size
         val pad = dp(context, 3)
         val radius = dp(context, 11)
+        // 高亮胶囊：白色液态玻璃（半透明白 + 光泽 + 高光描边）
         val highlight = View(context).apply {
-            background = GradientDrawable().apply {
-                cornerRadius = (radius - dp(context, 2)).toFloat()
-                setColor(IOS_BLUE)
-            }
+            background = LiquidGlass.panel(context, radius - dp(context, 2),
+                base = 0xE6FFFFFF.toInt(), sheenAlpha = 0x2E, edgeColor = 0x80FFFFFF.toInt())
         }
         val labels = mutableListOf<TextView>()
+        // 容器：深色玻璃槽
         val container = FrameLayout(context).apply {
-            background = GradientDrawable().apply {
-                cornerRadius = radius.toFloat()
-                setColor(CARD_HI)
-            }
+            background = LiquidGlass.panel(context, radius,
+                base = 0x8026262E.toInt(), sheenAlpha = 0x0E, edgeColor = LiquidGlass.EDGE_SOFT)
         }
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -188,13 +202,13 @@ object UIKit {
                 text = label
                 gravity = Gravity.CENTER
                 textSize = 13f
-                setTextColor(if (i == selected) Color.WHITE else TEXT_SECONDARY)
+                setTextColor(if (i == selected) IOS_BLUE else TEXT_SECONDARY)
                 setTypeface(typeface, if (i == selected) Typeface.BOLD else Typeface.NORMAL)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
                 setOnClickListener {
                     if (i == selected) return@setOnClickListener
                     labels.forEachIndexed { j, t ->
-                        t.setTextColor(if (j == i) Color.WHITE else TEXT_SECONDARY)
+                        t.setTextColor(if (j == i) IOS_BLUE else TEXT_SECONDARY)
                         t.setTypeface(t.typeface, if (j == i) Typeface.BOLD else Typeface.NORMAL)
                     }
                     container.post {
