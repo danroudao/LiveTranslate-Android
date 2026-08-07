@@ -58,6 +58,11 @@ class CaptureService : Service() {
 
         /** 状态回调（Activity 观察用） */
         var listener: Listener? = null
+
+        /** 服务是否运行中（MainActivity 停止按钮用） */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
     }
 
     // 管线组件
@@ -234,6 +239,7 @@ class CaptureService : Service() {
         this.overlay = OverlayManager(this, com.example.livetranslate.model.SettingsStore(this)).also { it.show() }
         this.extraLanguages = model.extraLanguages
         running = true
+        isRunning = true
         interimActive = false
         interimPending = ""
         committedTail = ""
@@ -535,6 +541,7 @@ class CaptureService : Service() {
 
     private fun stopPipeline() {
         running = false
+        isRunning = false
         capturer?.stop()
         capturer = null
         projection?.stop()
@@ -548,6 +555,8 @@ class CaptureService : Service() {
         }
         engine = null
         postStatus("已停止")
+        // 完全退出前台服务（ACTION_STOP / 手动停止时）
+        runCatching { stopSelf() }
     }
 
     private fun postStatus(text: String) {

@@ -141,14 +141,19 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             setPadding(dp(16), dp(12), dp(16), dp(24))
         }
 
-        // ── 头部：大标题 + 状态指示 + 版本徽章 ──
-        val header = LinearLayout(this).apply {
+        // ── 头部：两行布局（标题行 + 状态/版本/主题行，避免横向溢出导致主题按钮被挤出屏幕）──
+        val headerRow1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(8), dp(4), dp(4))
+            setPadding(dp(4), dp(8), dp(4), dp(2))
+        }
+        val headerRow2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(2), dp(4), dp(4))
         }
         val vtuberTheme = com.example.livetranslate.ui.ThemeManager.current.name == "vtuber"
-        header.addView(TextView(this).apply {
+        headerRow1.addView(TextView(this).apply {
             text = "LiveTranslate"
             textSize = if (vtuberTheme) 30f else 27f
             if (vtuberTheme) {
@@ -166,27 +171,32 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             }
             setTextColor(UIKit.TEXT)
         })
-        header.addView(View(this).apply {
+        headerRow1.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         if (vtuberTheme) {
             // 主立绘：紫发猫耳少女（VTuber 主题专属）
-            header.addView(UIKit.roundAvatar(this, "img/heroine.webp", 46))
-            header.addView(View(this).apply {
+            headerRow1.addView(UIKit.roundAvatar(this, "img/heroine.webp", 46))
+            headerRow1.addView(View(this).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(8), 1)
             })
         }
         statusDot = UIKit.statusDot(this, UIKit.TEXT_TERTIARY, 8)
-        header.addView(statusDot)
+        headerRow1.addView(statusDot)
+        root.addView(headerRow1)
+
         statusText = TextView(this).apply {
             text = "待机"
             textSize = 12f
             setTextColor(UIKit.TEXT_SECONDARY)
             setPadding(dp(6), 0, dp(10), 0)
         }
-        header.addView(statusText)
-        header.addView(TextView(this).apply {
-            text = "v0.11.0"
+        headerRow2.addView(statusText)
+        headerRow2.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+        })
+        headerRow2.addView(TextView(this).apply {
+            text = "v0.11.1"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -196,8 +206,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 com.example.livetranslate.ui.ThemeManager.current.cardEdge)
             setPadding(dp(10), dp(4), dp(10), dp(4))
         })
-        // 主题切换按钮
-        header.addView(ImageView(this).apply {
+        // 主题切换按钮（第二行右侧，空间充足不会溢出）
+        headerRow2.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_gear)
             setColorFilter(UIKit.TEXT)
             alpha = 0.7f
@@ -207,7 +217,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             }
             setOnClickListener { showThemeDialog() }
         })
-        root.addView(header)
+        root.addView(headerRow2)
         root.addView(TextView(this).apply {
             text = "实时音频翻译 · 悬浮字幕"
             textSize = 13f
@@ -218,8 +228,19 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         // ── 主操作卡片（参考图步骤卡：Q 版头像 + 按钮） ──
         root.addView(UIKit.sectionLabel(this, "操作"))
         val actionCard = UIKit.card(this)
-        val btnStartBtn = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY) {
-            ensurePermissionsAndStart()
+        val btnStartBtn = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY)
+        btnStartBtn.setOnClickListener {
+            if (com.example.livetranslate.pipeline.CaptureService.isRunning) {
+                // 运行中：点击停止服务
+                startService(Intent(this@MainActivity, com.example.livetranslate.pipeline.CaptureService::class.java).apply {
+                    action = com.example.livetranslate.pipeline.CaptureService.ACTION_STOP
+                })
+                btnStartBtn.text = "① 开始翻译"
+                setRunning(false)
+                appendStatus("服务已停止")
+            } else {
+                ensurePermissionsAndStart()
+            }
         }
         btnStart = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_phone.webp", 40), btnStartBtn)
                    else btnStartBtn
@@ -797,10 +818,19 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             android.util.Log.i("MainActivity", "startCapture: service started")
             appendStatus("服务已启动（${model.name} / ${model.model}）…")
             setRunning(true)
+            // 主按钮切换为停止
+            (btnStart as? TextView)?.text = "① 停止服务"
         } catch (e: Throwable) {
             android.util.Log.e("MainActivity", "startCapture failed", e)
             appendStatus("❌ 启动失败: ${e.message}")
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 同步主按钮状态（服务可能被外部停止/系统回收）
+        (btnStart as? TextView)?.text =
+            if (com.example.livetranslate.pipeline.CaptureService.isRunning) "① 停止服务" else "① 开始翻译"
     }
 
     // ---------- 模型管理（对应 ModelDownloadDialog） ----------
@@ -998,13 +1028,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     override fun onSegment(asrText: String, lang: String) {
         runOnUiThread {
-            IOSMotion.crossfadeText(asrView, "[$lang] $asrText")
+            // 直接替换（interim 频繁更新，动画会闪烁）
+            asrView.text = "[$lang] $asrText"
         }
     }
 
     override fun onTranslation(text: String) {
         runOnUiThread {
-            IOSMotion.crossfadeText(tlView, "译文: $text")
+            tlView.text = "译文: $text"
         }
     }
 }

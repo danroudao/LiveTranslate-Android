@@ -188,7 +188,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                y = dp(240)
+                y = dp(90)   // 屏幕顶部（状态栏下方），避免盖住主界面操作卡按钮
             }
             // 液态玻璃：窗口级背景模糊（API 31+，背后内容真实模糊）
             com.example.livetranslate.ui.LiquidGlass.blurWindow(lp, 26, context)
@@ -608,12 +608,19 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                     ov.animate().alpha(1f).setDuration(IOSMotion.BASE_MS)
                         .setInterpolator(IOSMotion.DECELERATE).start()
                 } else {
-                    IOSMotion.crossfadeText(ov, original)
+                    // 直接替换（无动画，避免频繁更新闪烁）
+                    if (ov.text?.toString() != original) {
+                        ov.text = original
+                    }
                 }
             }
-            // 译文：交叉淡化（无位移，避免跳动）
+            // 原文：直接替换（字幕原生行为，无动画避免闪烁）
+            if (ov.text?.toString() != original) {
+                ov.text = original
+            }
+            // 译文：直接替换（频繁更新时 fade 动画会闪烁）
             if (tv.text?.toString() != translation) {
-                IOSMotion.crossfadeText(tv, translation.ifEmpty { "…" })
+                tv.text = translation.ifEmpty { "…" }
             }
             // 内容高度自适应：文本变多行时窗口高度自动扩展（避免 resize 固定高度裁剪译文底部）
             view?.post {
