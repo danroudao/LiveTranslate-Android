@@ -322,14 +322,12 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         modelCard.addView(modelBtnRow)
         root.addView(modelCard)
 
-        // ── 工具卡片（参考图：线性图标 + 文字按钮） ──
+        // ── 工具卡片（第一版：纯文字按钮） ──
         root.addView(UIKit.sectionLabel(this, "工具"))
         val toolCard = UIKit.card(this, padding = 10)
         val toolRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val btnModels = UIKit.pillButton(this, "", matchWidth = true) { showModelManagerDialog() }
-        btnModels.text = UIKit.iconLabel(this, R.drawable.ic_folder, "模型管理")
-        val btnBench = UIKit.pillButton(this, "", matchWidth = true) { runBenchmark() }
-        btnBench.text = UIKit.iconLabel(this, R.drawable.ic_benchmark, "基准测试")
+        val btnModels = UIKit.pillButton(this, "模型管理", matchWidth = true) { showModelManagerDialog() }
+        val btnBench = UIKit.pillButton(this, "基准测试", matchWidth = true) { runBenchmark() }
         toolRow.addView(btnModels, LinearLayout.LayoutParams(0, dp(38), 1f))
         toolRow.addView(btnBench, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
             marginStart = dp(10)

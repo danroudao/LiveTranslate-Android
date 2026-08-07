@@ -101,32 +101,45 @@ object UIKit {
     ): TextView {
         val radius = if (small) dp(context, 10) else dp(context, 14)
         val t = ThemeManager.current
+        val dark = t.name == "dark"
         val bg: android.graphics.drawable.Drawable = when (style) {
-            // 主按钮：主题主色（渐变或纯色）+ 顶部光泽 + 高光描边
+            // 主按钮：暗色主题 = 第一版纯色平面（无光泽无描边）；其他主题 = 玻璃渐变
             ButtonStyle.PRIMARY -> {
-                val base = if (t.primaryGradA != null && t.primaryGradB != null)
-                    GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                        intArrayOf(t.primaryGradA, t.primaryGradB)).apply {
+                if (dark) {
+                    GradientDrawable().apply {
+                        cornerRadius = radius.toFloat()
+                        setColor(t.primary)
+                    }
+                } else {
+                    val base = if (t.primaryGradA != null && t.primaryGradB != null)
+                        GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                            intArrayOf(t.primaryGradA, t.primaryGradB)).apply {
+                            cornerRadius = radius.toFloat()
+                        }
+                    else GradientDrawable().apply {
+                        cornerRadius = radius.toFloat()
+                        setColor(t.primary)
+                    }
+                    val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                        intArrayOf(0x45FFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
                         cornerRadius = radius.toFloat()
                     }
-                else GradientDrawable().apply {
-                    cornerRadius = radius.toFloat()
-                    setColor(t.primary)
+                    val ring = GradientDrawable().apply {
+                        cornerRadius = radius.toFloat()
+                        setColor(0x00000000)
+                        setStroke(dp(context, 1), 0x66FFFFFF.toInt())
+                    }
+                    android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
                 }
-                val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(0x45FFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
-                    cornerRadius = radius.toFloat()
-                }
-                val ring = GradientDrawable().apply {
-                    cornerRadius = radius.toFloat()
-                    setColor(0x00000000)
-                    setStroke(dp(context, 1), 0x66FFFFFF.toInt())
-                }
-                android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
             }
-            // 次级按钮：主题玻璃（暗色主题还原第一版不透明 #26262E）
-            ButtonStyle.SECONDARY -> LiquidGlass.panel(context, if (small) 10 else 14,
-                base = UIKit.withAlphaCompat(t.inputBg, if (t.name == "dark") 0xFF else 0xBD),
+            // 次级按钮：暗色主题 = 第一版纯色 #26262E；其他主题 = 玻璃
+            ButtonStyle.SECONDARY -> if (dark) {
+                GradientDrawable().apply {
+                    cornerRadius = radius.toFloat()
+                    setColor(t.inputBg)
+                }
+            } else LiquidGlass.panel(context, if (small) 10 else 14,
+                base = UIKit.withAlphaCompat(t.inputBg, 0xBD),
                 sheenAlpha = if (t.name == "light") 0 else 0x16,
                 edgeColor = t.cardEdge)
             // 危险：透明红底
@@ -134,9 +147,14 @@ object UIKit {
                 cornerRadius = radius.toFloat()
                 setColor(0x26FF453A.toInt())
             }
-            // 胶囊：玻璃 + 描边
-            ButtonStyle.CHIP -> LiquidGlass.panel(context, if (small) 10 else 14,
-                base = UIKit.withAlphaCompat(t.inputBg, if (t.name == "dark") 0xFF else 0xBD),
+            // 胶囊：暗色主题 = 第一版纯色 #26262E；其他主题 = 玻璃
+            ButtonStyle.CHIP -> if (dark) {
+                GradientDrawable().apply {
+                    cornerRadius = radius.toFloat()
+                    setColor(t.inputBg)
+                }
+            } else LiquidGlass.panel(context, if (small) 10 else 14,
+                base = UIKit.withAlphaCompat(t.inputBg, 0xBD),
                 sheenAlpha = if (t.name == "light") 0 else 0x12,
                 edgeColor = t.cardEdge)
         }
