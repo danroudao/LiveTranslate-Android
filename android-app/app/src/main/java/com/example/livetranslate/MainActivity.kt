@@ -512,7 +512,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             setPadding(dp(2), dp(8), dp(2), 0)
         })
 
-        val etExtra = field("附加语言（逗号分隔，如 en,ja）", model.extraLanguages.joinToString(","))
+        val etExtra = field("附加语言（可选，留空 = 仅主语言翻译）", model.extraLanguages.joinToString(","))
         val cbStreaming = androidx.appcompat.widget.AppCompatCheckBox(this).apply { text = "流式输出"; isChecked = model.streaming }
         val cbJson = androidx.appcompat.widget.AppCompatCheckBox(this).apply {
             text = "JSON 结构化输出（不支持时自动降级）"
