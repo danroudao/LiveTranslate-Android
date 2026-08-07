@@ -30,10 +30,16 @@ object UIKit {
     const val CARD_LINE = 0xFF33333C.toInt()
     const val IOS_BLUE = 0xFF0A84FF.toInt()
     const val IOS_BLUE_DEEP = 0xFF0063C9.toInt()
+    // 参考图主题色：紫色系（VTuber 薰衣草风）
+    const val PURPLE = 0xFFBF5AF2.toInt()
+    const val PURPLE_DEEP = 0xFF6D28D9.toInt()
+    const val PURPLE_GRAD_A = 0xFFA855F7.toInt()
+    const val PURPLE_GRAD_B = 0xFF6D28D9.toInt()
+    const val LAVENDER = 0xFF8E8CF5.toInt()
+    const val PINK = 0xFFFF7EB6.toInt()
     const val GREEN = 0xFF30D158.toInt()
     const val ORANGE = 0xFFFF9F0A.toInt()
     const val RED = 0xFFFF453A.toInt()
-    const val PURPLE = 0xFFBF5AF2.toInt()
     const val TEXT = 0xFFFFFFFF.toInt()
     const val TEXT_SECONDARY = 0xFF9A9AA5.toInt()
     const val TEXT_TERTIARY = 0xFF5E5E6B.toInt()
@@ -88,11 +94,11 @@ object UIKit {
     ): TextView {
         val radius = if (small) dp(context, 10) else dp(context, 14)
         val bg: android.graphics.drawable.Drawable = when (style) {
-            // 主按钮：品牌蓝 + 顶部光泽 + 高光描边（液态蓝玻璃）
+            // 主按钮：紫色渐变（参考图主题）+ 顶部光泽 + 高光描边
             ButtonStyle.PRIMARY -> {
-                val base = GradientDrawable().apply {
+                val base = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(PURPLE_GRAD_A, PURPLE_GRAD_B)).apply {
                     cornerRadius = radius.toFloat()
-                    setColor(IOS_BLUE)
                 }
                 val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                     intArrayOf(0x45FFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
@@ -351,4 +357,60 @@ object UIKit {
             cornerRadius = dp(context, radiusDp).toFloat()
             setColor(color)
         }
+
+    // ---------- 图像工具（参考图 VTuber 资产） ----------
+
+    /** 圆形裁切 Bitmap（带白色高光描边）——用于 Q 版头像/立绘 */
+    fun circularBitmap(bmp: android.graphics.Bitmap, sizePx: Int, ringColor: Int = 0x59FFFFFF): android.graphics.Bitmap {
+        val out = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        // 缩放填满圆形
+        val scale = sizePx / Math.min(bmp.width, bmp.height).toFloat()
+        val shader = android.graphics.BitmapShader(bmp, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
+        shader.setLocalMatrix(android.graphics.Matrix().apply {
+            postScale(scale, scale)
+            postTranslate(-(bmp.width * scale - sizePx) / 2f, -(bmp.height * scale - sizePx) / 2f)
+        })
+        paint.shader = shader
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f, paint)
+        // 描边
+        paint.shader = null
+        paint.style = android.graphics.Paint.Style.STROKE
+        paint.strokeWidth = sizePx * 0.045f
+        paint.color = ringColor
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - paint.strokeWidth / 2f, paint)
+        return out
+    }
+
+    /** 从 assets 加载图片（WebP/PNG） */
+    fun loadAssetBitmap(context: Context, path: String): android.graphics.Bitmap? =
+        try {
+            context.assets.open(path).use { android.graphics.BitmapFactory.decodeStream(it) }
+        } catch (e: Exception) { null }
+
+    /** 圆形头像 ImageView（assets 图片 + 圆形裁切 + 描边） */
+    fun roundAvatar(context: Context, assetPath: String, sizeDp: Int): android.widget.ImageView {
+        val iv = android.widget.ImageView(context)
+        val bmp = loadAssetBitmap(context, assetPath)
+        if (bmp != null) {
+            iv.setImageBitmap(circularBitmap(bmp, dp(context, sizeDp)))
+        }
+        iv.layoutParams = LinearLayout.LayoutParams(dp(context, sizeDp), dp(context, sizeDp))
+        return iv
+    }
+
+    /** 图标+文字（ImageSpan，用于按钮/卡片标题，VectorDrawable 线性图标） */
+    fun iconLabel(context: Context, iconRes: Int, text: String, color: Int = TEXT, iconSizeDp: Int = 17): CharSequence {
+        val d = androidx.core.content.ContextCompat.getDrawable(context, iconRes)?.mutate()
+        val size = dp(context, iconSizeDp)
+        if (d != null) {
+            d.setTint(color)
+            d.setBounds(0, 0, size, size)
+        }
+        val span = if (d != null) android.text.style.ImageSpan(d, android.text.style.ImageSpan.ALIGN_BOTTOM) else null
+        return android.text.SpannableString(" $text").apply {
+            if (span != null) setSpan(span, 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
 }

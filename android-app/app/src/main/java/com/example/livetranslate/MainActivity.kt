@@ -16,6 +16,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -130,12 +131,25 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         header.addView(TextView(this).apply {
             text = "LiveTranslate"
-            textSize = 27f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            textSize = 30f
+            setTypeface(android.graphics.Typeface.createFromAsset(assets, "fonts/Pacifico.ttf"))
             setTextColor(UIKit.TEXT)
+            // 紫色渐变标题（参考图艺术字风格）
+            post {
+                paint.shader = android.graphics.LinearGradient(
+                    0f, 0f, width.toFloat(), height.toFloat(),
+                    intArrayOf(UIKit.PURPLE, UIKit.LAVENDER, UIKit.PURPLE),
+                    null, android.graphics.Shader.TileMode.CLAMP)
+                invalidate()
+            }
         })
         header.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+        })
+        // 主立绘：紫发猫耳少女（参考图主视觉，圆形头像）
+        header.addView(UIKit.roundAvatar(this, "img/heroine.webp", 46))
+        header.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(8), 1)
         })
         statusDot = UIKit.statusDot(this, UIKit.TEXT_TERTIARY, 8)
         header.addView(statusDot)
@@ -163,22 +177,25 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             setPadding(dp(4), 0, dp(4), dp(4))
         })
 
-        // ── 主操作卡片 ──
+        // ── 主操作卡片（参考图步骤卡：Q 版头像 + 按钮） ──
         root.addView(UIKit.sectionLabel(this, "操作"))
         val actionCard = UIKit.card(this)
-        btnStart = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY) {
-            ensurePermissionsAndStart()
-        }
+        btnStart = stepRow(this, UIKit.roundAvatar(this, "img/chibi_phone.webp", 40),
+            UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY) {
+                ensurePermissionsAndStart()
+            })
         actionCard.addView(btnStart)
-        btnTestAudio = UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
-            playTestAudio()
-        }
-        actionCard.addView(btnTestAudio.apply {
-            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(10)
+        btnTestAudio = stepRow(this, UIKit.roundAvatar(this, "img/chibi_ear.webp", 40),
+            UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
+                playTestAudio()
+            })
+        actionCard.addView(btnTestAudio, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(10)
         })
-        val btnAccessibility = UIKit.iosButton(
-            this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44
-        )
+        val accRow = stepRow(this, UIKit.roundAvatar(this, "img/chibi_doc.webp", 40),
+            UIKit.iosButton(this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44))
+        val btnAccessibility = (accRow.getChildAt(1) as TextView)
         btnAccessibility.setOnClickListener {
             if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isActive) {
                 if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isVisible) {
@@ -195,10 +212,24 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
         }
-        actionCard.addView(btnAccessibility.apply {
-            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(10)
+        actionCard.addView(accRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(10)
         })
         root.addView(actionCard)
+
+        // ── 白猫吉祥物（参考图底部装饰，半透明） ──
+        root.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(14), 0, 0)
+            addView(ImageView(this@MainActivity).apply {
+                val bmp = UIKit.loadAssetBitmap(this@MainActivity, "img/cat_mascot.webp")
+                if (bmp != null) setImageBitmap(bmp)
+                alpha = 0.55f
+                layoutParams = LinearLayout.LayoutParams(dp(110), dp(70))
+            })
+        })
 
         // ── ASR 引擎卡片 ──
         root.addView(UIKit.sectionLabel(this, "ASR 引擎"))
@@ -262,12 +293,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         modelCard.addView(modelBtnRow)
         root.addView(modelCard)
 
-        // ── 工具卡片 ──
+        // ── 工具卡片（参考图：线性图标 + 文字按钮） ──
         root.addView(UIKit.sectionLabel(this, "工具"))
         val toolCard = UIKit.card(this, padding = 10)
         val toolRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val btnModels = UIKit.pillButton(this, "模型管理", matchWidth = true) { showModelManagerDialog() }
-        val btnBench = UIKit.pillButton(this, "基准测试", matchWidth = true) { runBenchmark() }
+        val btnModels = UIKit.pillButton(this, "", matchWidth = true) { showModelManagerDialog() }
+        btnModels.text = UIKit.iconLabel(this, R.drawable.ic_folder, "模型管理")
+        val btnBench = UIKit.pillButton(this, "", matchWidth = true) { runBenchmark() }
+        btnBench.text = UIKit.iconLabel(this, R.drawable.ic_benchmark, "基准测试")
         toolRow.addView(btnModels, LinearLayout.LayoutParams(0, dp(38), 1f))
         toolRow.addView(btnBench, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
             marginStart = dp(10)
@@ -583,6 +616,17 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** 参考图步骤卡：Q版头像 + 按钮横排 */
+    private fun stepRow(context: Context, avatar: View, button: View): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(avatar)
+            addView(button, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(12)
+            })
+        }
 
     private fun appendStatus(s: String) {
         runOnUiThread {
