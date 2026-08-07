@@ -221,8 +221,9 @@ class SubtitleAccessibilityService : AccessibilityService() {
             setPadding(dp(16), dp(12), dp(16), dp(14))
             // 液态玻璃菜单面板
             background = com.example.livetranslate.ui.LiquidGlass.panel(this@SubtitleAccessibilityService, 18,
-                com.example.livetranslate.ui.LiquidGlass.GLASS_BASE, 0x33,
-                com.example.livetranslate.ui.LiquidGlass.EDGE_HI)
+                com.example.livetranslate.ui.ThemeManager.current.cardBase,
+                if (com.example.livetranslate.ui.ThemeManager.current.name == "light") 0 else 0x33,
+                com.example.livetranslate.ui.ThemeManager.current.cardEdge)
         }
 
         // ── 预设模板行 ──
@@ -342,9 +343,10 @@ class SubtitleAccessibilityService : AccessibilityService() {
     }
 
     private fun presetPill(text: String): TextView {
+        val t = com.example.livetranslate.ui.ThemeManager.current
         val bg = com.example.livetranslate.ui.LiquidGlass.panel(this, 10,
-            base = 0xB826262E.toInt(), sheenAlpha = 0x10,
-            edgeColor = com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
+            base = com.example.livetranslate.ui.UIKit.withAlphaCompat(t.inputBg, 0xB8), sheenAlpha = if (t.name == "light") 0 else 0x10,
+            edgeColor = t.cardEdge)
         return TextView(this).apply {
             this.text = text
             gravity = Gravity.CENTER

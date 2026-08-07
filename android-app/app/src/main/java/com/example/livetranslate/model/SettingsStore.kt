@@ -26,6 +26,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_ASR_URL, "http://172.17.0.1:8765")!!
         set(value) = prefs.edit().putString(KEY_ASR_URL, value).apply()
 
+    /** 主题（dark / light / vtuber），默认第一版暗色 */
+    var themeName: String
+        get() = prefs.getString(KEY_THEME, "dark")!!
+        set(value) = prefs.edit().putString(KEY_THEME, value).apply()
+
     /** VAD 模式: silero / energy */
     var vadMode: String
         get() = prefs.getString(KEY_VAD_MODE, "silero")!!
@@ -89,6 +94,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ASR_URL = "asr_url"
         private const val KEY_VAD_MODE = "vad_mode"
         private const val KEY_SUBTITLE_STYLE = "subtitle_style"
+        private const val KEY_THEME = "theme"
         private const val KEY_OVERLAY_W = "overlay_w"
         private const val KEY_OVERLAY_H = "overlay_h"
 

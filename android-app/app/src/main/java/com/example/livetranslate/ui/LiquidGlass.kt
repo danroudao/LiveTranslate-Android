@@ -131,13 +131,17 @@ object LiquidGlass {
         }
 
         init {
-            // 参考图主题：紫色系极光（薰衣草紫/紫罗兰/樱粉）
+            // 光球色随主题（暗色=紫系 / 浅色=淡蓝紫 / VTuber=紫系）
+            val colors = ThemeManager.current.aurora
             orbs.add(Orb(0.12f, -0.10f, 0.72f,
-                intArrayOf(0x4DBF5AF2.toInt(), 0x00BF5AF2.toInt()), 40f * density, 30f * density, 16000))  // 紫
+                intArrayOf(colors.getOrElse(0) { 0x4DBF5AF2.toInt() }, 0x00000000),
+                40f * density, 30f * density, 16000))
             orbs.add(Orb(1.05f, 0.30f, 0.62f,
-                intArrayOf(0x457C6CF0.toInt(), 0x007C6CF0.toInt()), -50f * density, 25f * density, 19000)) // 薰衣草紫
+                intArrayOf(colors.getOrElse(1) { 0x457C6CF0.toInt() }, 0x00000000),
+                -50f * density, 25f * density, 19000))
             orbs.add(Orb(0.45f, 1.08f, 0.75f,
-                intArrayOf(0x3DFF7EB6.toInt(), 0x00FF7EB6.toInt()), 35f * density, -36f * density, 22000)) // 樱粉
+                intArrayOf(colors.getOrElse(2) { 0x3DFF7EB6.toInt() }, 0x00000000),
+                35f * density, -36f * density, 22000))
             orbs.forEachIndexed { i, o ->
                 val anim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
                     duration = o.duration

@@ -24,37 +24,44 @@ import android.widget.TextView
  */
 object UIKit {
 
-    const val BG = 0xFF101014.toInt()
-    const val CARD = 0xFF1E1E23.toInt()
-    const val CARD_HI = 0xFF26262E.toInt()
-    const val CARD_LINE = 0xFF33333C.toInt()
-    const val IOS_BLUE = 0xFF0A84FF.toInt()
-    const val IOS_BLUE_DEEP = 0xFF0063C9.toInt()
-    // 参考图主题色：紫色系（VTuber 薰衣草风）
-    const val PURPLE = 0xFFBF5AF2.toInt()
-    const val PURPLE_DEEP = 0xFF6D28D9.toInt()
-    const val PURPLE_GRAD_A = 0xFFA855F7.toInt()
-    const val PURPLE_GRAD_B = 0xFF6D28D9.toInt()
-    const val LAVENDER = 0xFF8E8CF5.toInt()
-    const val PINK = 0xFFFF7EB6.toInt()
-    const val GREEN = 0xFF30D158.toInt()
-    const val ORANGE = 0xFFFF9F0A.toInt()
-    const val RED = 0xFFFF453A.toInt()
-    const val TEXT = 0xFFFFFFFF.toInt()
-    const val TEXT_SECONDARY = 0xFF9A9AA5.toInt()
-    const val TEXT_TERTIARY = 0xFF5E5E6B.toInt()
-    const val TRACK = 0xFF3A3A44.toInt()
+    // 主题动态色板（由 ThemeManager 驱动，切换主题后组件自动跟随）
+    val BG: Int get() = ThemeManager.current.bg
+    val CARD: Int get() = ThemeManager.current.cardBase
+    val CARD_HI: Int get() = ThemeManager.current.inputBg
+    val CARD_LINE: Int get() = ThemeManager.current.inputBorder
+    val IOS_BLUE: Int get() = ThemeManager.current.primary
+    val IOS_BLUE_DEEP: Int get() = ThemeManager.current.primaryGradB ?: ThemeManager.current.primary
+    // 紫色系（VTuber 主题装饰色）
+    val PURPLE: Int get() = 0xFFBF5AF2.toInt()
+    val PURPLE_DEEP: Int get() = 0xFF6D28D9.toInt()
+    val PURPLE_GRAD_A: Int get() = ThemeManager.current.primaryGradA ?: ThemeManager.current.primary
+    val PURPLE_GRAD_B: Int get() = ThemeManager.current.primaryGradB ?: ThemeManager.current.primary
+    val LAVENDER: Int get() = 0xFF8E8CF5.toInt()
+    val PINK: Int get() = 0xFFFF7EB6.toInt()
+    val GREEN = 0xFF30D158.toInt()
+    val ORANGE = 0xFFFF9F0A.toInt()
+    val RED = 0xFFFF453A.toInt()
+    val TEXT: Int get() = ThemeManager.current.text
+    val TEXT_SECONDARY: Int get() = ThemeManager.current.textSecondary
+    val TEXT_TERTIARY: Int get() = ThemeManager.current.textTertiary
+    val TRACK: Int get() = ThemeManager.current.track
 
     fun dp(context: Context, v: Int): Int =
         (v * context.resources.displayMetrics.density).toInt()
 
+    /** 替换颜色 alpha（替代 androidx.core.graphics.withAlpha） */
+    fun withAlphaCompat(color: Int, alpha: Int): Int =
+        (color and 0x00FFFFFF) or (alpha shl 24)
+
     // ---------- 容器 ----------
 
-    /** 液态玻璃卡片：半透明深色 + 顶部光泽 + 高光描边（iOS 26 Liquid Glass） */
+    /** 主题卡片：玻璃面板（色随主题） */
     fun card(context: Context, padding: Int = 14, radiusDp: Int = 16): LinearLayout =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = LiquidGlass.panel(context, radiusDp, LiquidGlass.GLASS_SOFT)
+            background = LiquidGlass.panel(context, radiusDp,
+                ThemeManager.current.cardBase, ThemeManager.current.cardSheen,
+                ThemeManager.current.cardEdge)
             setPadding(dp(context, padding), dp(context, 14), dp(context, padding), dp(context, 14))
         }
 
@@ -93,12 +100,18 @@ object UIKit {
         onClick: (() -> Unit)? = null,
     ): TextView {
         val radius = if (small) dp(context, 10) else dp(context, 14)
+        val t = ThemeManager.current
         val bg: android.graphics.drawable.Drawable = when (style) {
-            // 主按钮：紫色渐变（参考图主题）+ 顶部光泽 + 高光描边
+            // 主按钮：主题主色（渐变或纯色）+ 顶部光泽 + 高光描边
             ButtonStyle.PRIMARY -> {
-                val base = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                    intArrayOf(PURPLE_GRAD_A, PURPLE_GRAD_B)).apply {
+                val base = if (t.primaryGradA != null && t.primaryGradB != null)
+                    GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                        intArrayOf(t.primaryGradA, t.primaryGradB)).apply {
+                        cornerRadius = radius.toFloat()
+                    }
+                else GradientDrawable().apply {
                     cornerRadius = radius.toFloat()
+                    setColor(t.primary)
                 }
                 val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                     intArrayOf(0x45FFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
@@ -111,9 +124,10 @@ object UIKit {
                 }
                 android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
             }
-            // 次级按钮：深色玻璃（半透明白 + 描边）
+            // 次级按钮：主题玻璃（半透明 + 描边）
             ButtonStyle.SECONDARY -> LiquidGlass.panel(context, if (small) 10 else 14,
-                base = 0xBD26262E.toInt(), sheenAlpha = 0x16, edgeColor = LiquidGlass.EDGE_HI)
+                base = withAlphaCompat(t.inputBg, 0xBD), sheenAlpha = if (t.name == "light") 0 else 0x16,
+                edgeColor = t.cardEdge)
             // 危险：透明红底
             ButtonStyle.DANGER -> GradientDrawable().apply {
                 cornerRadius = radius.toFloat()
@@ -121,7 +135,8 @@ object UIKit {
             }
             // 胶囊：玻璃 + 描边
             ButtonStyle.CHIP -> LiquidGlass.panel(context, if (small) 10 else 14,
-                base = 0xBD26262E.toInt(), sheenAlpha = 0x12, edgeColor = LiquidGlass.EDGE_HI)
+                base = withAlphaCompat(t.inputBg, 0xBD), sheenAlpha = if (t.name == "light") 0 else 0x12,
+                edgeColor = t.cardEdge)
         }
         return TextView(context).apply {
             this.text = text
@@ -183,16 +198,19 @@ object UIKit {
         val n = options.size
         val pad = dp(context, 3)
         val radius = dp(context, 11)
-        // 高亮胶囊：白色液态玻璃（半透明白 + 光泽 + 高光描边）
+        val t = ThemeManager.current
+        // 高亮胶囊：主题高亮玻璃
         val highlight = View(context).apply {
             background = LiquidGlass.panel(context, radius - dp(context, 2),
-                base = 0xE6FFFFFF.toInt(), sheenAlpha = 0x2E, edgeColor = 0x80FFFFFF.toInt())
+                base = t.segHighlight, sheenAlpha = if (t.name == "light") 0x26 else 0x2E,
+                edgeColor = t.segHighlightEdge)
         }
         val labels = mutableListOf<TextView>()
-        // 容器：深色玻璃槽
+        // 容器：主题玻璃槽
         val container = FrameLayout(context).apply {
             background = LiquidGlass.panel(context, radius,
-                base = 0x8026262E.toInt(), sheenAlpha = 0x0E, edgeColor = LiquidGlass.EDGE_SOFT)
+                base = t.segContainer, sheenAlpha = if (t.name == "light") 0 else 0x0E,
+                edgeColor = t.cardEdge)
         }
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -208,14 +226,14 @@ object UIKit {
                 text = label
                 gravity = Gravity.CENTER
                 textSize = 13f
-                setTextColor(if (i == selected) IOS_BLUE else TEXT_SECONDARY)
+                setTextColor(if (i == selected) t.segTextSel else TEXT_SECONDARY)
                 setTypeface(typeface, if (i == selected) Typeface.BOLD else Typeface.NORMAL)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
                 setOnClickListener {
                     if (i == selected) return@setOnClickListener
-                    labels.forEachIndexed { j, t ->
-                        t.setTextColor(if (j == i) IOS_BLUE else TEXT_SECONDARY)
-                        t.setTypeface(t.typeface, if (j == i) Typeface.BOLD else Typeface.NORMAL)
+                    labels.forEachIndexed { j, tt ->
+                        tt.setTextColor(if (j == i) t.segTextSel else TEXT_SECONDARY)
+                        tt.setTypeface(tt.typeface, if (j == i) Typeface.BOLD else Typeface.NORMAL)
                     }
                     container.post {
                         val step = (container.width - pad * 2) / n
@@ -326,7 +344,7 @@ object UIKit {
     ): SeekBar {
         val trackH = dp(context, 4)
         val thumbD = dp(context, 18)
-        val progressDrawable = IosProgressDrawable(TRACK, IOS_BLUE, trackH / 2)
+        val progressDrawable = IosProgressDrawable(ThemeManager.current.track, IOS_BLUE, trackH / 2)
         return SeekBar(context).apply {
             this.max = max
             this.progress = progress

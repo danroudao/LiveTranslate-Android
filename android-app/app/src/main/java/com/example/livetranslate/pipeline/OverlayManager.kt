@@ -251,8 +251,9 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             setPadding(dp(16), dp(12), dp(16), dp(14))
             // 液态玻璃菜单面板：半透明深色 + 光泽 + 高光描边
             background = com.example.livetranslate.ui.LiquidGlass.panel(context, 18,
-                com.example.livetranslate.ui.LiquidGlass.GLASS_BASE, 0x33,
-                com.example.livetranslate.ui.LiquidGlass.EDGE_HI)
+                com.example.livetranslate.ui.ThemeManager.current.cardBase,
+                if (com.example.livetranslate.ui.ThemeManager.current.name == "light") 0 else 0x33,
+                com.example.livetranslate.ui.ThemeManager.current.cardEdge)
         }
 
         // ── 预设模板行（高清 / 夜览 / 极简）──
@@ -323,9 +324,10 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         // ── 字体 ──
         content.addView(rowLabel("字体"))
         val fontSpinner = Spinner(context).apply {
+            val t = com.example.livetranslate.ui.ThemeManager.current
             background = com.example.livetranslate.ui.LiquidGlass.panel(context, 9,
-                base = 0xB826262E.toInt(), sheenAlpha = 0x0E,
-                edgeColor = com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
+                base = com.example.livetranslate.ui.UIKit.withAlphaCompat(t.inputBg, 0xC0), sheenAlpha = if (t.name == "light") 0 else 0x0E,
+                edgeColor = t.cardEdge)
         }
         fontSpinner.adapter = ArrayAdapter(
             context, android.R.layout.simple_spinner_item,
@@ -445,11 +447,12 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         }
     }
 
-    /** 预设胶囊按钮（液态玻璃胶囊） */
+    /** 预设胶囊按钮（主题玻璃胶囊） */
     private fun presetPill(text: String): TextView {
+        val t = com.example.livetranslate.ui.ThemeManager.current
         val bg = com.example.livetranslate.ui.LiquidGlass.panel(context, 10,
-            base = 0xB826262E.toInt(), sheenAlpha = 0x10,
-            edgeColor = com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
+            base = com.example.livetranslate.ui.UIKit.withAlphaCompat(t.inputBg, 0xB8), sheenAlpha = if (t.name == "light") 0 else 0x10,
+            edgeColor = t.cardEdge)
         return TextView(context).apply {
             this.text = text
             gravity = Gravity.CENTER

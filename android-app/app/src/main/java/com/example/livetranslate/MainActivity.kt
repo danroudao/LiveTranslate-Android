@@ -65,14 +65,16 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 强制深色模式：UI 按深色背景设计，浅色系统下文字会与背景融合
+        // 强制深色模式：系统组件统一深色（页面配色由主题引擎控制）
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
             androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
         )
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
+        com.example.livetranslate.ui.ThemeManager.init(this)
         val content = buildUi()
         setContentView(content.view)
+        applyThemeSystemBars()
         CaptureService.listener = this
         etAsrUrl.setText(store.asrUrl)
         refreshModelSpinner()
@@ -129,28 +131,35 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(8), dp(4), dp(4))
         }
+        val vtuberTheme = com.example.livetranslate.ui.ThemeManager.current.name == "vtuber"
         header.addView(TextView(this).apply {
             text = "LiveTranslate"
-            textSize = 30f
-            setTypeface(android.graphics.Typeface.createFromAsset(assets, "fonts/Pacifico.ttf"))
-            setTextColor(UIKit.TEXT)
-            // 紫色渐变标题（参考图艺术字风格）
-            post {
-                paint.shader = android.graphics.LinearGradient(
-                    0f, 0f, width.toFloat(), height.toFloat(),
-                    intArrayOf(UIKit.PURPLE, UIKit.LAVENDER, UIKit.PURPLE),
-                    null, android.graphics.Shader.TileMode.CLAMP)
-                invalidate()
+            textSize = if (vtuberTheme) 30f else 27f
+            if (vtuberTheme) {
+                // VTuber 主题：手写体 + 紫色渐变艺术字
+                setTypeface(android.graphics.Typeface.createFromAsset(assets, "fonts/Pacifico.ttf"))
+                post {
+                    paint.shader = android.graphics.LinearGradient(
+                        0f, 0f, width.toFloat(), height.toFloat(),
+                        intArrayOf(UIKit.PURPLE, UIKit.LAVENDER, UIKit.PURPLE),
+                        null, android.graphics.Shader.TileMode.CLAMP)
+                    invalidate()
+                }
+            } else {
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
             }
+            setTextColor(UIKit.TEXT)
         })
         header.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
-        // 主立绘：紫发猫耳少女（参考图主视觉，圆形头像）
-        header.addView(UIKit.roundAvatar(this, "img/heroine.webp", 46))
-        header.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(8), 1)
-        })
+        if (vtuberTheme) {
+            // 主立绘：紫发猫耳少女（VTuber 主题专属）
+            header.addView(UIKit.roundAvatar(this, "img/heroine.webp", 46))
+            header.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(8), 1)
+            })
+        }
         statusDot = UIKit.statusDot(this, UIKit.TEXT_TERTIARY, 8)
         header.addView(statusDot)
         statusText = TextView(this).apply {
@@ -161,13 +170,26 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         header.addView(statusText)
         header.addView(TextView(this).apply {
-            text = "v0.10.0"
+            text = "v0.11.0"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
             background = com.example.livetranslate.ui.LiquidGlass.panel(this@MainActivity, 9,
-                com.example.livetranslate.ui.LiquidGlass.GLASS_SOFT, 0x12, com.example.livetranslate.ui.LiquidGlass.EDGE_SOFT)
+                com.example.livetranslate.ui.ThemeManager.current.cardBase,
+                com.example.livetranslate.ui.ThemeManager.current.cardSheen,
+                com.example.livetranslate.ui.ThemeManager.current.cardEdge)
             setPadding(dp(10), dp(4), dp(10), dp(4))
+        })
+        // 主题切换按钮
+        header.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_gear)
+            setColorFilter(UIKit.TEXT)
+            alpha = 0.7f
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
+                marginStart = dp(8)
+            }
+            setOnClickListener { showThemeDialog() }
         })
         root.addView(header)
         root.addView(TextView(this).apply {
@@ -180,22 +202,25 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         // ── 主操作卡片（参考图步骤卡：Q 版头像 + 按钮） ──
         root.addView(UIKit.sectionLabel(this, "操作"))
         val actionCard = UIKit.card(this)
-        btnStart = stepRow(this, UIKit.roundAvatar(this, "img/chibi_phone.webp", 40),
-            UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY) {
-                ensurePermissionsAndStart()
-            })
+        val btnStartBtn = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY) {
+            ensurePermissionsAndStart()
+        }
+        btnStart = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_phone.webp", 40), btnStartBtn)
+                   else btnStartBtn
         actionCard.addView(btnStart)
-        btnTestAudio = stepRow(this, UIKit.roundAvatar(this, "img/chibi_ear.webp", 40),
-            UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
-                playTestAudio()
-            })
+        val btnTestBtn = UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
+            playTestAudio()
+        }
+        btnTestAudio = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_ear.webp", 40), btnTestBtn)
+                       else btnTestBtn
         actionCard.addView(btnTestAudio, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(10)
         })
-        val accRow = stepRow(this, UIKit.roundAvatar(this, "img/chibi_doc.webp", 40),
-            UIKit.iosButton(this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44))
-        val btnAccessibility = (accRow.getChildAt(1) as TextView)
+        val accBtn = UIKit.iosButton(this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44)
+        val accRow = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_doc.webp", 40), accBtn)
+                     else accBtn
+        val btnAccessibility = accBtn
         btnAccessibility.setOnClickListener {
             if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isActive) {
                 if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isVisible) {
@@ -218,18 +243,20 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         })
         root.addView(actionCard)
 
-        // ── 白猫吉祥物（参考图底部装饰，半透明） ──
-        root.addView(LinearLayout(this).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(14), 0, 0)
-            addView(ImageView(this@MainActivity).apply {
-                val bmp = UIKit.loadAssetBitmap(this@MainActivity, "img/cat_mascot.webp")
-                if (bmp != null) setImageBitmap(bmp)
-                alpha = 0.55f
-                layoutParams = LinearLayout.LayoutParams(dp(110), dp(70))
+        // ── 白猫吉祥物（VTuber 主题专属底部装饰） ──
+        if (vtuberTheme) {
+            root.addView(LinearLayout(this).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(14), 0, 0)
+                addView(ImageView(this@MainActivity).apply {
+                    val bmp = UIKit.loadAssetBitmap(this@MainActivity, "img/cat_mascot.webp")
+                    if (bmp != null) setImageBitmap(bmp)
+                    alpha = 0.55f
+                    layoutParams = LinearLayout.LayoutParams(dp(110), dp(70))
+                })
             })
-        })
+        }
 
         // ── ASR 引擎卡片 ──
         root.addView(UIKit.sectionLabel(this, "ASR 引擎"))
@@ -514,7 +541,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         container.addView(etPrompt)
 
         val scroll = ScrollView(this).apply { addView(container) }
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(if (index < 0) "新增模型" else "编辑模型")
             .setView(scroll)
             .setPositiveButton("保存") { _, _ ->
@@ -605,11 +632,54 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     /** 模型选择对话框：列表点选填入模型名 */
     private fun showModelPicker(models: List<String>, targetEditText: EditText) {
         val sorted = models.sorted()
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("选择模型（共 ${sorted.size} 个）")
             .setItems(sorted.toTypedArray()) { _, which ->
                 targetEditText.setText(sorted[which])
                 appendStatus("已选择模型: ${sorted[which]}")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 状态栏/导航栏按主题适配（浅色主题用浅色底+深色图标） */
+    private fun applyThemeSystemBars() {
+        val t = com.example.livetranslate.ui.ThemeManager.current
+        val light = t.name == "light"
+        window.statusBarColor = if (light) t.bg else android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = t.bg
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val c = window.insetsController
+            val flag = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+            c?.setSystemBarsAppearance(if (light) flag else 0, flag)
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                if (light) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0
+        }
+    }
+
+    /** 主题化对话框构建器（浅色主题用浅色对话框） */
+    private fun dialogBuilder(): AlertDialog.Builder {
+        val res = com.example.livetranslate.ui.ThemeManager.current.dialogThemeRes
+        return if (res != 0) AlertDialog.Builder(this, res) else AlertDialog.Builder(this)
+    }
+
+    /** 主题切换对话框：三版风格可切换 */
+    private fun showThemeDialog() {
+        val t = com.example.livetranslate.ui.ThemeManager
+        val names = t.themes.map { "${it.icon}  ${it.label}${if (it.name == t.current.name) "  ✓" else ""}" }
+            .toTypedArray()
+        val builder = if (t.current.dialogThemeRes != 0)
+            AlertDialog.Builder(this, t.current.dialogThemeRes) else AlertDialog.Builder(this)
+        builder.setTitle("🎨 主题")
+            .setItems(names) { _, which ->
+                val theme = t.themes[which]
+                if (theme.name != t.current.name) {
+                    t.set(this, theme.name)
+                    appendStatus("主题已切换: ${theme.label}")
+                    recreate()
+                }
             }
             .setNegativeButton("取消", null)
             .show()
@@ -812,7 +882,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
         for (f in ModelRepository.ALL) addRow(f)
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("模型管理")
             .setView(ScrollView(this).apply { addView(container) })
             .setPositiveButton("关闭", null)
@@ -848,7 +918,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 for (r in summary.results) {
                     sb.append("%dms %s\n  → %s\n".format(r.latencyMs, r.sentence, r.translated.ifEmpty { "[失败]" }))
                 }
-                AlertDialog.Builder(this)
+                dialogBuilder()
                     .setTitle("基准测试结果（${model.model}）")
                     .setMessage(sb.toString())
                     .setPositiveButton("关闭", null)
