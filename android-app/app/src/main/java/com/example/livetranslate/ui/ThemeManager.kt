@@ -46,21 +46,28 @@ data class AppTheme(
     val iconColor: Int,
     // 极光光球（颜色数组，按 alpha 预乘）
     val aurora: List<Int>,
+    // 是否显示极光背景（第一版暗色为纯色无背景）
+    val showAurora: Boolean = true,
+    // 菜单面板玻璃参数（样式菜单专用，不随卡片纯色化）
+    val menuBase: Int = 0xD1121420.toInt(),
+    val menuSheen: Int = 0x33,
+    val menuEdge: Int = 0x59FFFFFF.toInt(),
     // 对话框主题（0=系统深色）
     val dialogThemeRes: Int = 0,
 )
 
 object ThemeManager {
 
-    /** 第一版暗色液态玻璃（默认） */
+    /** 第一版暗色主题（v0.8.0 原版：纯色背景 + 纯色卡片 + 蓝色分段胶囊） */
     val DARK_LIQUID = AppTheme(
         name = "dark",
         label = "暗色液态玻璃",
         icon = "🌙",
         bg = 0xFF101014.toInt(),
-        cardBase = 0xA8121420.toInt(),      // 深蓝灰玻璃
-        cardSheen = 0x14,
-        cardEdge = 0x2EFFFFFF.toInt(),
+        // 第一版：不透明纯色卡片（无光泽/无描边）
+        cardBase = 0xFF1E1E23.toInt(),
+        cardSheen = 0x00000000,
+        cardEdge = 0x00000000,
         text = 0xFFFFFFFF.toInt(),
         textSecondary = 0xFF9A9AA5.toInt(),
         textTertiary = 0xFF5E5E6B.toInt(),
@@ -70,12 +77,17 @@ object ThemeManager {
         inputBg = 0xFF26262E.toInt(),
         inputBorder = 0xFF33333C.toInt(),
         track = 0xFF3A3A44.toInt(),
-        segContainer = 0x8026262E.toInt(),
-        segHighlight = 0xE6FFFFFF.toInt(),  // 白色玻璃胶囊
-        segHighlightEdge = 0x80FFFFFF.toInt(),
-        segTextSel = 0xFF0A84FF.toInt(),
+        // 第一版：蓝色高亮胶囊 + 白字
+        segContainer = 0xFF26262E.toInt(),
+        segHighlight = 0xFF0A84FF.toInt(),
+        segHighlightEdge = 0x00000000,
+        segTextSel = 0xFFFFFFFF.toInt(),
         iconColor = 0xFFFFFFFF.toInt(),
-        aurora = listOf(0x4DBF5AF2.toInt(), 0x457C6CF0.toInt(), 0x3DFF7EB6.toInt()),
+        aurora = emptyList(),
+        showAurora = false,                 // 第一版：纯色背景无极光
+        menuBase = 0xD1121420.toInt(),      // 样式菜单保留液态玻璃（优化项）
+        menuSheen = 0x33,
+        menuEdge = 0x59FFFFFF.toInt(),
     )
 
     /** 第二版浅色 Apple 官网（极光 + 毛玻璃） */

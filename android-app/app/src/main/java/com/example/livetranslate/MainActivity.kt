@@ -116,10 +116,12 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         val frame = android.widget.FrameLayout(this).apply {
             setBackgroundColor(UIKit.BG)
         }
-        frame.addView(com.example.livetranslate.ui.LiquidGlass.AuroraView(this),
-            android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        if (com.example.livetranslate.ui.ThemeManager.current.showAurora) {
+            frame.addView(com.example.livetranslate.ui.LiquidGlass.AuroraView(this),
+                android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(24))

@@ -251,9 +251,10 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             setPadding(dp(16), dp(12), dp(16), dp(14))
             // 液态玻璃菜单面板：半透明深色 + 光泽 + 高光描边
             background = com.example.livetranslate.ui.LiquidGlass.panel(context, 18,
-                com.example.livetranslate.ui.ThemeManager.current.cardBase,
-                if (com.example.livetranslate.ui.ThemeManager.current.name == "light") 0 else 0x33,
-                com.example.livetranslate.ui.ThemeManager.current.cardEdge)
+                com.example.livetranslate.ui.ThemeManager.current.menuBase,
+                if (com.example.livetranslate.ui.ThemeManager.current.name == "light") 0
+                else com.example.livetranslate.ui.ThemeManager.current.menuSheen,
+                com.example.livetranslate.ui.ThemeManager.current.menuEdge)
         }
 
         // ── 预设模板行（高清 / 夜览 / 极简）──

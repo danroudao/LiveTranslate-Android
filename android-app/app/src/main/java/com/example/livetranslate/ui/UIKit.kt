@@ -124,9 +124,10 @@ object UIKit {
                 }
                 android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
             }
-            // 次级按钮：主题玻璃（半透明 + 描边）
+            // 次级按钮：主题玻璃（暗色主题还原第一版不透明 #26262E）
             ButtonStyle.SECONDARY -> LiquidGlass.panel(context, if (small) 10 else 14,
-                base = withAlphaCompat(t.inputBg, 0xBD), sheenAlpha = if (t.name == "light") 0 else 0x16,
+                base = UIKit.withAlphaCompat(t.inputBg, if (t.name == "dark") 0xFF else 0xBD),
+                sheenAlpha = if (t.name == "light") 0 else 0x16,
                 edgeColor = t.cardEdge)
             // 危险：透明红底
             ButtonStyle.DANGER -> GradientDrawable().apply {
@@ -135,7 +136,8 @@ object UIKit {
             }
             // 胶囊：玻璃 + 描边
             ButtonStyle.CHIP -> LiquidGlass.panel(context, if (small) 10 else 14,
-                base = withAlphaCompat(t.inputBg, 0xBD), sheenAlpha = if (t.name == "light") 0 else 0x12,
+                base = UIKit.withAlphaCompat(t.inputBg, if (t.name == "dark") 0xFF else 0xBD),
+                sheenAlpha = if (t.name == "light") 0 else 0x12,
                 edgeColor = t.cardEdge)
         }
         return TextView(context).apply {
