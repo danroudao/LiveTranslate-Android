@@ -219,6 +219,8 @@ object UIKit {
         val pad = dp(context, 3)
         val radius = dp(context, 11)
         val t = ThemeManager.current
+        // 当前选中项（内部维护，支持反复切换——不能用构造参数 selected 比较）
+        var current = selected.coerceIn(0, n - 1)
         // 高亮胶囊：主题高亮玻璃
         val highlight = View(context).apply {
             background = LiquidGlass.panel(context, radius - dp(context, 2),
@@ -246,11 +248,12 @@ object UIKit {
                 text = label
                 gravity = Gravity.CENTER
                 textSize = 13f
-                setTextColor(if (i == selected) t.segTextSel else TEXT_SECONDARY)
-                setTypeface(typeface, if (i == selected) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (i == current) t.segTextSel else TEXT_SECONDARY)
+                setTypeface(typeface, if (i == current) Typeface.BOLD else Typeface.NORMAL)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
                 setOnClickListener {
-                    if (i == selected) return@setOnClickListener
+                    if (i == current) return@setOnClickListener
+                    current = i   // 更新内部状态，支持反复切换
                     labels.forEachIndexed { j, tt ->
                         tt.setTextColor(if (j == i) t.segTextSel else TEXT_SECONDARY)
                         tt.setTypeface(tt.typeface, if (j == i) Typeface.BOLD else Typeface.NORMAL)
@@ -277,7 +280,7 @@ object UIKit {
                 highlight.layoutParams = FrameLayout.LayoutParams(
                     step, row.height - pad * 2
                 )
-                highlight.translationX = (selected * step).toFloat()
+                highlight.translationX = (current * step).toFloat()
             }
         }
         // 外层包装（统一 40dp 高）

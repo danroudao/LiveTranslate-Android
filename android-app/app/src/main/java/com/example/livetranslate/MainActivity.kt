@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private lateinit var modelSpinner: Spinner
     private lateinit var store: SettingsStore
     private var tts: TextToSpeech? = null
+    private var auroraView: com.example.livetranslate.ui.LiquidGlass.AuroraView? = null
     private var asrModeSelected = 0
 
     // 运行状态指示（头部呼吸圆点）
@@ -103,7 +104,19 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     override fun onDestroy() {
         CaptureService.listener = null
         tts?.shutdown()
+        auroraView = null
         super.onDestroy()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 后台暂停极光动画（无限动画在后台空耗 CPU/内存，长时间运行易卡死）
+        auroraView?.pause()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        auroraView?.resume()
     }
 
     // ---------- UI ----------
@@ -117,7 +130,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             setBackgroundColor(UIKit.BG)
         }
         if (com.example.livetranslate.ui.ThemeManager.current.showAurora) {
-            frame.addView(com.example.livetranslate.ui.LiquidGlass.AuroraView(this),
+            auroraView = com.example.livetranslate.ui.LiquidGlass.AuroraView(this)
+            frame.addView(auroraView,
                 android.widget.FrameLayout.LayoutParams(
                     android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                     android.widget.FrameLayout.LayoutParams.MATCH_PARENT))

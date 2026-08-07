@@ -162,11 +162,19 @@ class CaptureService : Service() {
             .build()
     }
 
-    /** 通知栏字幕：原文 + 译文（BigTextStyle，锁屏可见） */
+    /** 通知栏字幕：原文 + 译文（BigTextStyle，锁屏可见）—— 500ms 节流合并，避免频繁 notify 卡顿 */
+    private var lastNotifTs = 0L
+    private var pendingNotif: Pair<String, String>? = null
     private fun updateNotificationSubtitle(original: String, translation: String) {
         handler.post {
+            pendingNotif = original to translation
+            val now = System.currentTimeMillis()
+            if (now - lastNotifTs < 500) return@post   // 节流：合并高频更新
+            lastNotifTs = now
+            val (o, t) = pendingNotif ?: return@post
+            pendingNotif = null
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            nm.notify(NOTIF_ID, buildNotification("$original\n\n$translation"))
+            nm.notify(NOTIF_ID, buildNotification("$o\n\n$t"))
         }
     }
 

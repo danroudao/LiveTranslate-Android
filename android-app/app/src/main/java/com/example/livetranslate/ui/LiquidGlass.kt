@@ -120,6 +120,10 @@ object LiquidGlass {
         private val animators = mutableListOf<android.animation.ValueAnimator>()
         private val density = resources.displayMetrics.density
 
+        /** 生命周期控制：后台时暂停动画（避免无限动画空耗 CPU/内存） */
+        fun pause() = animators.forEach { it.pause() }
+        fun resume() = animators.forEach { if (it.isPaused) it.resume() }
+
         private class Orb(
             val cx: Float, val cy: Float,
             val radius: Float,

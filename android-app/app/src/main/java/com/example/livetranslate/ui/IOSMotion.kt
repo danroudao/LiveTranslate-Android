@@ -149,11 +149,14 @@ object IOSMotion {
     }
 
     /** 交叉淡化文本：旧内容淡出后替换并淡入（字幕更新动效） */
-    fun crossfadeText(v: android.widget.TextView, newText: String, fadeMs: Long = FAST_MS, slideDp: Float = 6f) {
+    /**
+     * 交叉淡化文本（无位移——字幕频繁更新时带位移动画会视觉跳动）。
+     * 旧内容淡出 → 替换 → 淡入。
+     */
+    fun crossfadeText(v: android.widget.TextView, newText: String, fadeMs: Long = FAST_MS, slideDp: Float = 0f) {
         v.animate().cancel()
         v.animate()
             .alpha(0f)
-            .translationY(slideDp * v.resources.displayMetrics.density)
             .setDuration(fadeMs)
             .setInterpolator(STANDARD)
             .setListener(object : AnimatorListenerAdapter() {
@@ -161,7 +164,6 @@ object IOSMotion {
                     v.text = newText
                     v.animate()
                         .alpha(1f)
-                        .translationY(0f)
                         .setDuration(fadeMs)
                         .setInterpolator(DECELERATE)
                         .start()

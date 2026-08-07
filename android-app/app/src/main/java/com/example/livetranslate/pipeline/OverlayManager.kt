@@ -611,9 +611,24 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                     IOSMotion.crossfadeText(ov, original)
                 }
             }
-            // 译文：交叉淡化
+            // 译文：交叉淡化（无位移，避免跳动）
             if (tv.text?.toString() != translation) {
                 IOSMotion.crossfadeText(tv, translation.ifEmpty { "…" })
+            }
+            // 内容高度自适应：文本变多行时窗口高度自动扩展（避免 resize 固定高度裁剪译文底部）
+            view?.post {
+                val v = view ?: return@post
+                val lp = params ?: return@post
+                if (lp.height <= 0) return@post  // WRAP_CONTENT 已自适应
+                v.measure(
+                    android.view.View.MeasureSpec.makeMeasureSpec(lp.width, android.view.View.MeasureSpec.EXACTLY),
+                    android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED)
+                )
+                val wantH = v.measuredHeight
+                if (wantH > lp.height) {
+                    lp.height = wantH
+                    try { wm.updateViewLayout(v, lp) } catch (e: Exception) {}
+                }
             }
         }
     }
