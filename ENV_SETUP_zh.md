@@ -427,3 +427,22 @@ TTFB 实测：0.26s（流式）
 - 样式持久化：SettingsStore.subtitleStyle（悬浮窗与无障碍条共享）
 - 版本：v0.7.0(5) → v0.7.1(6)，versionCode 每次递增（ColorOS 限制）
 - UI 接手者必读：UI_DEV_GUIDE_zh.md
+
+---
+
+## 15. v0.10.x 液态玻璃 + v0.11 三主题验证记录（2026-08-07）
+
+### v0.10 Liquid Glass（液态玻璃）
+- 窗口级真毛玻璃：`blurBehindRadius`（API 31+），悬浮窗 26dp / 菜单 24dp，dumpsys 确认 `blurBehindRadius=71`
+- **PopupWindow 模糊失效坑**：show 后立即设置 blurBehindRadius 会被 PopupWindow 内部布局覆盖 → `postDelayed(160ms)` 再设置才生效
+- **菜单与悬浮窗重叠坑**：showAsDropDown 锚定 ⚙（悬浮窗顶部）→ 菜单盖住译文；改 showAtLocation 手动定位悬浮窗底部下方 6dp，空间不足弹上方贴状态栏；PopupWindow 无 maxHeight → 固定 height=min(内容估算, 可用空间) + ScrollView 内部滚动
+- **滑杆黑块坑**：菜单玻璃底色过暗（rgba(18,20,32)）+ SeekBar 默认背景 → 提亮 rgba(42,44,58) + `background=null` + `splitTrack=false`
+- **GradientDrawable 无 setShader**（javap 确认）→ 用 `GradientDrawable(Orientation.TOP_BOTTOM, colors)` 内置渐变
+- **附加语言译文重复中文坑**：mock LLM 只读 `target_language` 字段，但 App 用 system prompt "into X" 指定目标语言 → mock 改为正则解析 system prompt 推断语言
+
+### v0.11 三主题系统
+- ThemeManager：色板动态委托（`val BG get() = ThemeManager.current.bg`），切主题 recreate 生效，持久化 `theme` 键
+- 暗色主题 = 第一版还原：纯色背景（showAurora=false）、不透明卡片、纯色平面按钮、蓝色分段胶囊
+- 菜单/字幕窗用独立玻璃参数（menuBase 等），不随卡片纯色化
+- 状态栏按主题：浅色主题浅底+深图标（applyThemeSystemBars 必须在 setContentView 之后，否则 decorView null 崩溃）
+- 视觉验证：describe_image 视觉模型逐主题审查（极光/毛玻璃/黑块/重叠）

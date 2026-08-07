@@ -16,7 +16,8 @@
   - Anthropic（Claude 直连）
   - Gemini（Google 直连）
   - 思考型模型自动兼容（content null 防御 / 顶层 enable_thinking / 自动降级重试）
-- **三种字幕显示**：顶部悬浮窗（可拖动/关闭）、无障碍字幕条（免悬浮窗权限）、通知栏字幕
+- **三种字幕显示**：顶部悬浮窗（液态玻璃真毛玻璃，可拖动/关闭）、无障碍字幕条（免悬浮窗权限）、通知栏字幕
+- **三主题可切换**（右上角齿轮）：🌙 暗色液态玻璃（默认·第一版）/ ☀️ 浅色 Apple / 💜 VTuber 紫
 - **多语言并行翻译**、多模型配置、模型下载管理（断点续传）、基准测试
 
 ## 技术栈
@@ -46,7 +47,7 @@ cd android-app
 
 ## 文档
 
-- [UI 开发接手指南（代码导航/UI 模块/数据流/构建测试）](UI_DEV_GUIDE_zh.md)
+- [UI 开发接手指南（代码导航/UI 模块/主题系统/数据流/构建测试/踩坑）](UI_DEV_GUIDE_zh.md)
 - [移植方案（可行性分析/架构设计/分阶段计划）](DEVELOPMENT_PLAN_zh.md)
 - [环境搭建 / 踩坑记录 / 验证记录](ENV_SETUP_zh.md)
 
@@ -55,6 +56,7 @@ cd android-app
 ```
 android-app/
 ├── app/src/main/java/com/example/livetranslate/
+│   ├── ui/        主题引擎（ThemeManager）、组件库（UIKit）、液态玻璃（LiquidGlass）、动画（IOSMotion）
 │   ├── pipeline/   音频捕获、VAD、管线服务、悬浮窗、无障碍字幕
 │   ├── net/        RemoteAsrClient（远程 ASR 协议）、LlmTranslator（多协议翻译）
 │   ├── asr/        LocalAsrEngine（sherpa-onnx SenseVoice）
