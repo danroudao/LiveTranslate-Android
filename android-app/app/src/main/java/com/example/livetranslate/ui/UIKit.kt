@@ -132,12 +132,11 @@ object UIKit {
                     android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
                 }
             }
-            // 次级按钮：暗色主题 = 提亮底色 + 细边框（视觉评审：可发现性）；其他主题 = 玻璃
+            // 次级按钮：暗色主题 = 第一版纯色 #26262E；其他主题 = 玻璃
             ButtonStyle.SECONDARY -> if (dark) {
                 GradientDrawable().apply {
                     cornerRadius = radius.toFloat()
-                    setColor(0xFF2C2C34.toInt())
-                    setStroke(dp(context, 1), 0x33FFFFFF.toInt())
+                    setColor(t.inputBg)
                 }
             } else LiquidGlass.panel(context, if (small) 10 else 14,
                 base = UIKit.withAlphaCompat(t.inputBg, 0xBD),
@@ -148,12 +147,11 @@ object UIKit {
                 cornerRadius = radius.toFloat()
                 setColor(0x26FF453A.toInt())
             }
-            // 胶囊：暗色主题 = 提亮底色 + 细边框（一致性）
+            // 胶囊：暗色主题 = 第一版纯色 #26262E；其他主题 = 玻璃
             ButtonStyle.CHIP -> if (dark) {
                 GradientDrawable().apply {
                     cornerRadius = radius.toFloat()
-                    setColor(0xFF2C2C34.toInt())
-                    setStroke(dp(context, 1), 0x26FFFFFF.toInt())
+                    setColor(t.inputBg)
                 }
             } else LiquidGlass.panel(context, if (small) 10 else 14,
                 base = UIKit.withAlphaCompat(t.inputBg, 0xBD),

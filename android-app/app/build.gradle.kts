@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.livetranslate"
         minSdk = 29
         targetSdk = 34
-        versionCode = 19
-        versionName = "0.13.2"
+        versionCode = 18
+        versionName = "0.13.1"
 
         // 真机 arm64-v8a + 模拟器 x86_64（sherpa-onnx 原生库占体积，过滤冗余 ABI）
         ndk {

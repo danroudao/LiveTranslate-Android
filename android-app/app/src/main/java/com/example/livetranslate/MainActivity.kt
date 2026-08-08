@@ -48,9 +48,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private lateinit var asrModelSpinner: Spinner
     private lateinit var modelSpinner: Spinner
     private lateinit var modelStatusText: TextView
-    private lateinit var statusBadge: LinearLayout
-    private lateinit var statusBadgeDot: View
-    private lateinit var statusBadgeText: TextView
     private lateinit var store: SettingsStore
     private var tts: TextToSpeech? = null
     private var auroraView: com.example.livetranslate.ui.LiquidGlass.AuroraView? = null
@@ -195,7 +192,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             text = "待机"
             textSize = 14f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFFF9500.toInt())  // 待机橙色（视觉评审 P0：状态色醒目）
+            setTextColor(UIKit.TEXT_SECONDARY)
             setPadding(dp(6), 0, dp(10), 0)
         }
         headerRow2.addView(statusText)
@@ -203,9 +200,9 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.13.2"
-            textSize = 10f
-            setTextColor(UIKit.TEXT_TERTIARY)
+            text = "v0.13.1"
+            textSize = 11f
+            setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
             background = com.example.livetranslate.ui.LiquidGlass.panel(this@MainActivity, 9,
                 com.example.livetranslate.ui.ThemeManager.current.cardBase,
@@ -322,26 +319,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             typeface = android.graphics.Typeface.MONOSPACE
             setLineSpacing(0f, 1.15f)
         }
-        // 状态徽章行：运行状态一目了然（P0 状态可视化）
-        statusBadge = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(6))
-        }
-        statusBadgeDot = View(this).apply {
-            background = UIKit.roundedBg(this@MainActivity, 0xFFFF9500.toInt(), 4)
-            layoutParams = LinearLayout.LayoutParams(dp(8), dp(8))
-        }
-        statusBadgeText = TextView(this).apply {
-            text = "待机"
-            textSize = 12f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFFF9500.toInt())
-            setPadding(dp(6), 0, 0, 0)
-        }
-        statusBadge.addView(statusBadgeDot)
-        statusBadge.addView(statusBadgeText)
-        statusCard.addView(statusBadge)
         statusCard.addView(asrView)
         statusCard.addView(tlView)
         statusCard.addView(statusView)
@@ -494,23 +471,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         modelStatusText.text = "● ${protocolLabel(model.protocol)} · ${model.model} · ${model.apiBase}"
     }
 
-    /** 状态徽章更新（待机橙 / 运行绿 + 呼吸动画） */
-    private fun updateStatusBadge(running: Boolean) {
-        if (!::statusBadgeText.isInitialized) return
-        statusBadgeText.text = if (running) "监听中…" else "待机"
-        val color = if (running) UIKit.GREEN else 0xFFFF9500.toInt()
-        statusBadgeText.setTextColor(color)
-        statusBadgeDot.background = UIKit.roundedBg(this, color, 4)
-        if (running) {
-            statusBadgeDot.animate().alpha(0.3f).setDuration(700)
-                .withEndAction { statusBadgeDot.animate().alpha(1f).setDuration(700).start() }
-                .start()
-        } else {
-            statusBadgeDot.animate().cancel()
-            statusBadgeDot.alpha = 1f
-        }
-    }
-
     private fun currentModelFromSpinner(): ModelConfig {
         val list = store.models.ifEmpty { listOf(store.activeModel()) }
         return list[modelSpinner.selectedItemPosition.coerceIn(0, list.size - 1)]
@@ -520,10 +480,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private fun setRunning(running: Boolean) {
         runOnUiThread {
             statusDot?.background = UIKit.roundedBg(
-                this, if (running) UIKit.GREEN else 0xFFFF9500.toInt(), 4)
+                this, if (running) UIKit.GREEN else UIKit.TEXT_TERTIARY, 4)
             statusText?.text = if (running) "● 运行中" else "待机"
-            statusText?.setTextColor(if (running) UIKit.GREEN else 0xFFFF9500.toInt())
-            updateStatusBadge(running)
             if (running) {
                 IOSMotion.breathe(statusDot ?: return@runOnUiThread)
             } else {
@@ -833,30 +791,15 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     private fun appendStatus(s: String) {
         runOnUiThread {
-            val ts = java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date())
-            val line = "$ts $s"
+            val line = java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date()) + " " + s
             val newText = if (statusView.text.isNullOrEmpty()) line
             else "${statusView.text}\n$line"
             // 截断：保留最近 MAX_STATUS_LINES 行（运行数小时后日志可达数万行，
             // 无限追加会导致 TextView 内存增长 + 每次 setText 全量重排 O(n²)）
-            val lines = newText.split('\n').takeLast(MAX_STATUS_LINES)
-            // 时间戳灰色 + 内容正常色（视觉评审 P1：日志排版层级）
-            val sp = android.text.SpannableStringBuilder()
-            for ((i, ln) in lines.withIndex()) {
-                if (i > 0) sp.append('\n')
-                val spIdx = ln.indexOf(' ')
-                if (spIdx > 0) {
-                    val tsPart = ln.substring(0, spIdx)
-                    val start = sp.length
-                    sp.append(tsPart)
-                    sp.setSpan(android.text.style.ForegroundColorSpan(0xFF777777.toInt()),
-                        start, start + tsPart.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    sp.append(ln.substring(spIdx))
-                } else {
-                    sp.append(ln)
-                }
-            }
-            statusView.text = sp
+            val lines = newText.split('\n')
+            statusView.text = if (lines.size > MAX_STATUS_LINES) {
+                lines.takeLast(MAX_STATUS_LINES).joinToString("\n")
+            } else newText
         }
     }
 
