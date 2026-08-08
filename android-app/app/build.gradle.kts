@@ -27,6 +27,14 @@ android {
         }
     }
 
+    // 内嵌 llama.cpp 推理引擎（jni_llm.cpp + NDK 预编译静态库）
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
+    ndkVersion = "26.1.10909125"
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -53,6 +53,27 @@ object ModelRepository {
         relDir = "models",
     )
 
+    // ---------- 本地 LLM（Qwen3.5 GGUF，目录约定 models/llm/） ----------
+
+    /** Qwen3.5 GGUF 下载源（unsloth 量化版，hf-mirror 优先） */
+    private fun qwen3Gguf(size: String, sizeBytes: Long): ModelFile = ModelFile(
+        id = "qwen3.5-llm",
+        fileName = "Qwen3.5-$size-Q4_K_M.gguf",
+        urls = listOf(
+            "https://hf-mirror.com/unsloth/Qwen3.5-$size-GGUF/resolve/main/Qwen3.5-$size-Q4_K_M.gguf?download=true",
+            "https://huggingface.co/unsloth/Qwen3.5-$size-GGUF/resolve/main/Qwen3.5-$size-Q4_K_M.gguf?download=true",
+        ),
+        sizeBytes = sizeBytes,
+        relDir = "models/llm",
+    )
+
+    /** 本地翻译 LLM 模型（Qwen3.5 0.8B/2B/4B Q4_K_M，实测模拟器 426ms/848ms/1092ms 每句） */
+    val LLM = listOf(
+        qwen3Gguf("0.8B", 532_517_120),
+        qwen3Gguf("2B", 1_280_835_840),
+        qwen3Gguf("4B", 2_740_937_888),
+    )
+
     /** 模型管理页展示的全部条目 */
-    val ALL: List<ModelFile> = SENSE_VOICE + SILERO_VAD
+    val ALL: List<ModelFile> = SENSE_VOICE + SILERO_VAD + LLM
 }

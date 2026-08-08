@@ -474,10 +474,10 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         protocolSpinner.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_item,
-            listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)")
+            listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)", "本地 LLM (llama.cpp)")
         ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
         protocolSpinner.setSelection(
-            when (model.protocol) { "anthropic" -> 1; "gemini" -> 2; else -> 0 }
+            when (model.protocol) { "anthropic" -> 1; "gemini" -> 2; "local" -> 3; else -> 0 }
         )
         container.addView(protocolSpinner)
 
@@ -596,7 +596,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                     extraLanguages = etExtra.text.toString()
                         .split(",").map { it.trim() }.filter { it.isNotEmpty() },
                     protocol = when (protocolSpinner.selectedItemPosition) {
-                        1 -> "anthropic"; 2 -> "gemini"; else -> "openai"
+                        1 -> "anthropic"; 2 -> "gemini"; 3 -> "local"; else -> "openai"
                     },
                 )
                 if (index < 0) store.addModel(updated) else store.setActiveModel(index, updated)
@@ -937,7 +937,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     private fun runBenchmark() {
         val model = currentModelFromSpinner()
-        if (model.apiKey.isEmpty()) {
+        // 本地 LLM 模式无需 API Key
+        if (model.protocol != "local" && model.apiKey.isEmpty()) {
             appendStatus("❌ 请先配置 API Key 再跑基准测试")
             return
         }
@@ -950,6 +951,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 noThink = model.noThink, jsonResponse = model.jsonResponse,
                 contextTurns = model.contextTurns, timeoutSec = model.timeout.toLong(),
                 protocol = model.protocol,
+                modelDir = java.io.File(this.filesDir, "models/llm").absolutePath,
             )
             val runner = BenchmarkRunner(translator)
             val summary = runner.run()
