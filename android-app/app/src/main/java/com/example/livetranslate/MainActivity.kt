@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private lateinit var btnTestAudio: View
     private lateinit var etAsrUrl: EditText
     private lateinit var modelSpinner: Spinner
+    private lateinit var modelStatusText: TextView
     private lateinit var store: SettingsStore
     private var tts: TextToSpeech? = null
     private var auroraView: com.example.livetranslate.ui.LiquidGlass.AuroraView? = null
@@ -196,7 +197,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.12.0"
+            text = "v0.12.1"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -328,6 +329,24 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             setPadding(dp(8), 0, dp(8), 0)
         }
         modelCard.addView(modelSpinner)
+        // 当前模型状态提示行（协议 / 模型 / 下载与加载状态）
+        modelStatusText = TextView(this).apply {
+            textSize = 11.5f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(8), dp(2), 0)
+        }
+        modelCard.addView(modelStatusText)
+        // 切换模型即生效：同步 activeModelIndex + 刷新状态
+        modelSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val list = store.models
+                if (position in list.indices) {
+                    store.activeModelIndex = position
+                    updateModelStatus(list[position])
+                }
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
         val modelBtnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -345,7 +364,15 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         val btnDel = UIKit.pillButton(this, "删除", matchWidth = true) {
             val idx = store.activeModelIndex
+            val m = store.models.getOrNull(idx)
             store.removeModel(idx)
+            // 本地模型条目：连 GGUF 文件一起删除（否则自动发现会复活）
+            if (m?.protocol == "local") {
+                val f = java.io.File(filesDir, "models/llm/${m.model}")
+                if (f.exists() && f.delete()) {
+                    appendStatus("已删除模型与文件: ${m.model}")
+                }
+            }
             refreshModelSpinner()
             appendStatus("已删除模型 #$idx")
         }
@@ -406,6 +433,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     }
 
     private fun refreshModelSpinner() {
+        syncLocalModels()
         val models = store.models.ifEmpty { listOf(store.activeModel()) }
         val names = models.map { it.name + " · " + it.model + "  ▾" }
         modelSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, names).apply {
@@ -413,6 +441,58 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         val idx = store.activeModelIndex.coerceIn(0, names.size - 1)
         modelSpinner.setSelection(idx)
+        updateModelStatus(models[idx])
+    }
+
+    /** 自动发现已下载的本地 GGUF 模型（filesDir/models/llm 目录下 .gguf 文件），合并进模型列表尾部 */
+    private fun syncLocalModels() {
+        val dir = java.io.File(filesDir, "models/llm")
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".gguf") }
+            ?.sortedBy { it.length() } ?: emptyList()
+        val remote = store.models.filter { it.protocol != "local" }
+        val local = files.map { f ->
+            store.models.firstOrNull { it.protocol == "local" && it.model == f.name } ?: run {
+                val tag = Regex("Qwen3\\.5-(\\d+\\.?\\d*B)").find(f.name)?.groupValues?.get(1)
+                    ?: f.name.removeSuffix(".gguf")
+                ModelConfig(
+                    name = "本地 $tag",
+                    apiBase = "local",   // 本地引擎：地址自动填 local（需求 2）
+                    apiKey = "",
+                    model = f.name,
+                    targetLanguage = "zh",
+                    streaming = true,
+                    noThink = true,
+                    timeout = 60,
+                    protocol = "local",
+                )
+            }
+        }
+        val merged = remote + local
+        if (merged != store.models) store.models = merged
+    }
+
+    /** 协议显示名 */
+    private fun protocolLabel(p: String): String = when (p) {
+        "anthropic" -> "Anthropic"
+        "gemini" -> "Gemini"
+        "local" -> "本地引擎"
+        else -> "OpenAI 兼容"
+    }
+
+    /** 当前模型状态行：协议 / 模型 / 下载与加载状态（需求 3） */
+    private fun updateModelStatus(model: ModelConfig) {
+        if (!::modelStatusText.isInitialized) return
+        modelStatusText.text = if (model.protocol == "local") {
+            val f = java.io.File(filesDir, "models/llm/${model.model}")
+            val loaded = f.exists() && com.example.livetranslate.asr.LocalLlmEngine.isModelLoaded(f.absolutePath)
+            "● ${protocolLabel(model.protocol)} · ${model.model} · " + when {
+                !f.exists() -> "⚠ 未下载（模型管理页下载）"
+                loaded -> "已加载 ✓"
+                else -> "已下载 · 首次翻译时加载"
+            }
+        } else {
+            "● ${protocolLabel(model.protocol)} · ${model.model} · ${model.apiBase}"
+        }
     }
 
     private fun currentModelFromSpinner(): ModelConfig {
@@ -477,9 +557,33 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)", "本地 LLM (llama.cpp)")
         ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
         protocolSpinner.setSelection(
-            when (model.protocol) { "anthropic" -> 1; "gemini" -> 2; "local" -> 3; else -> 0 }
+            when {
+                model.protocol == "local" || model.apiBase == "local" -> 3
+                model.protocol == "anthropic" -> 1
+                model.protocol == "gemini" -> 2
+                else -> 0
+            }
         )
+        // 需求 2：选本地 LLM 协议时自动填入 local 地址（无需手填），并提示模型名填 GGUF 文件名
+        protocolSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (pos == 3) {
+                    etBase.setText("local")
+                    etKey.setText("")
+                    etModel.hint = "GGUF 文件名，如 Qwen3.5-2B-Q4_K_M.gguf"
+                } else {
+                    etModel.hint = "模型名"
+                }
+            }
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
         container.addView(protocolSpinner)
+        container.addView(TextView(this).apply {
+            text = "本地 LLM：模型名填 GGUF 文件名（模型管理页下载后自动出现在模型列表）"
+            textSize = 11f
+            setTextColor(0xFFCC7733.toInt())
+            setPadding(dp(2), dp(6), dp(2), 0)
+        })
 
         // 拉取模型列表（按协议对应端点，防止手输模型名出错）
         btnFetchModels.setOnClickListener {
@@ -831,6 +935,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         // 同步主按钮状态（服务可能被外部停止/系统回收）
         (btnStart as? TextView)?.text =
             if (com.example.livetranslate.pipeline.CaptureService.isRunning) "① 停止服务" else "① 开始翻译"
+        // 刷新模型列表（模型管理页可能刚下载/删除 GGUF）与状态行
+        if (::modelSpinner.isInitialized) refreshModelSpinner()
     }
 
     // ---------- 模型管理（对应 ModelDownloadDialog） ----------
@@ -957,6 +1063,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             val summary = runner.run()
             runner.shutdown()
             runOnUiThread {
+                // 基准测试可能首次加载本地模型，刷新状态行
+                updateModelStatus(currentModelFromSpinner())
                 val sb = StringBuilder()
                 sb.append("完成率 %.0f%%\n".format(summary.successRate * 100))
                 sb.append("平均 %.0fms | 最小 %dms | 最大 %dms\n".format(summary.avgMs, summary.minMs, summary.maxMs))
