@@ -48,10 +48,10 @@ class LlmTranslator(
     companion object {
         private const val TAG = "LlmTranslator"
 
-        /** 判断是否为本地部署的推理服务（llama.cpp 等）：本机回环地址 */
+        /** 判断是否为本地部署的推理服务（llama.cpp 等）：本机回环地址或 protocol=local 的 apiBase */
         fun isLocalApiBase(apiBase: String): Boolean {
             val base = apiBase.lowercase()
-            return base.contains("127.0.0.1") || base.contains("localhost") ||
+            return base == "local" || base.contains("127.0.0.1") || base.contains("localhost") ||
                 base.contains("0.0.0.0") || base.contains("[::1]")
         }
 

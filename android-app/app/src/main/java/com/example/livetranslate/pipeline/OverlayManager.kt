@@ -583,7 +583,31 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     fun update(originalText: String, translationText: String, showOriginal: Boolean = true) {
         original = originalText
         translation = translationText
-        refresh()
+        scheduleRefresh()
+    }
+
+    companion object {
+        /** 流式字幕刷新节流：本地引擎逐 token 回调（~50ms/次），直接刷新会逐字闪烁，合并到 ~120ms */
+        private const val THROTTLE_MS = 120L
+    }
+
+    private var lastThrottleAt = 0L
+    private var throttlePending = false
+
+    /** 节流刷新：流式阶段合并高频更新，最终结果即时生效 */
+    private fun scheduleRefresh() {
+        val now = System.currentTimeMillis()
+        if (now - lastThrottleAt >= THROTTLE_MS) {
+            lastThrottleAt = now
+            refresh()
+        } else if (!throttlePending) {
+            throttlePending = true
+            handler.postDelayed({
+                throttlePending = false
+                lastThrottleAt = System.currentTimeMillis()
+                refresh()
+            }, THROTTLE_MS)
+        }
     }
 
     private fun refresh() {
