@@ -216,7 +216,8 @@ class CaptureService : Service() {
         this.projection = projection
         this.engine = if (asrMode == "local" && modelDir.isNotEmpty()) {
             try {
-                LocalAsrEngine(this, modelDir)
+                // 固定 en 语言提示：SenseVoice auto 模式在口音英语上会误检语言（实测印度口音被检成 ja/zh）
+                LocalAsrEngine(this, modelDir, language = "en")
             } catch (e: Throwable) {
                 postStatus("本地 ASR 加载失败: ${e.message}（回退远程）")
                 RemoteAsrClient(asrUrl)

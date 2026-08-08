@@ -36,6 +36,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_VAD_MODE, "silero")!!
         set(value) = prefs.edit().putString(KEY_VAD_MODE, value).apply()
 
+    /** 本地 ASR 模型选择（0=SenseVoice / 1=Whisper Tiny / 2=Whisper Base） */
+    var asrModelIndex: Int
+        get() = prefs.getInt(KEY_ASR_MODEL, 0)
+        set(value) = prefs.edit().putInt(KEY_ASR_MODEL, value).apply()
+
     /** 字幕条样式（悬浮窗 + 无障碍条共享） */
     var subtitleStyle: SubtitleStyle
         get() {
@@ -93,6 +98,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ACTIVE_MODEL = "active_model"
         private const val KEY_ASR_URL = "asr_url"
         private const val KEY_VAD_MODE = "vad_mode"
+        private const val KEY_ASR_MODEL = "asr_model"
         private const val KEY_SUBTITLE_STYLE = "subtitle_style"
         private const val KEY_THEME = "theme"
         private const val KEY_OVERLAY_W = "overlay_w"

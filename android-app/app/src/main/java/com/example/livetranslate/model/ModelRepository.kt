@@ -74,6 +74,30 @@ object ModelRepository {
         qwen3Gguf("4B", 2_740_937_888),
     )
 
+    // ---------- 本地 ASR 备选：Whisper（英文口音/快语速鲁棒性优于 SenseVoice） ----------
+
+    /** Whisper 模型三件套（encoder/decoder/tokens），目录约定 models/whisper-<size>/ */
+    private fun whisperFiles(size: String, dir: String): List<ModelFile> = listOf(
+        ModelFile(id = "whisper-$size", fileName = "$size.en-encoder.int8.onnx",
+            urls = listOf(
+                "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-$size.en/resolve/main/$size.en-encoder.int8.onnx?download=true",
+                "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-$size.en/resolve/main/$size.en-encoder.int8.onnx?download=true",
+            ), sizeBytes = if (size == "tiny") 12_937_772 else 29_120_534, relDir = dir),
+        ModelFile(id = "whisper-$size", fileName = "$size.en-decoder.int8.onnx",
+            urls = listOf(
+                "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-$size.en/resolve/main/$size.en-decoder.int8.onnx?download=true",
+                "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-$size.en/resolve/main/$size.en-decoder.int8.onnx?download=true",
+            ), sizeBytes = if (size == "tiny") 4_425_606 else 130_669_978, relDir = dir),
+        ModelFile(id = "whisper-$size", fileName = "$size.en-tokens.txt",
+            urls = listOf(
+                "https://hf-mirror.com/csukuangfj/sherpa-onnx-whisper-$size.en/resolve/main/$size.en-tokens.txt?download=true",
+                "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-$size.en/resolve/main/$size.en-tokens.txt?download=true",
+            ), sizeBytes = 835_554, relDir = dir),
+    )
+
+    /** Whisper tiny/base 英文模型（备用 ASR，口音鲁棒） */
+    val WHISPER = whisperFiles("tiny", "models/whisper-tiny") + whisperFiles("base", "models/whisper-base")
+
     /** 模型管理页展示的全部条目 */
-    val ALL: List<ModelFile> = SENSE_VOICE + SILERO_VAD + LLM
+    val ALL: List<ModelFile> = SENSE_VOICE + SILERO_VAD + LLM + WHISPER
 }

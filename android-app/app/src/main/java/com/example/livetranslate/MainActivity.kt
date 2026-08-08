@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     private lateinit var btnStart: View
     private lateinit var btnTestAudio: View
     private lateinit var etAsrUrl: EditText
+    private lateinit var asrModelSpinner: Spinner
     private lateinit var modelSpinner: Spinner
     private lateinit var modelStatusText: TextView
     private lateinit var store: SettingsStore
@@ -197,7 +198,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.12.3"
+            text = "v0.12.4"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -319,6 +320,23 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
         asrCard.addView(etAsrUrl)
+        // 本地 ASR 模型选择（SenseVoice 多语种 / Whisper 英文口音鲁棒）
+        asrCard.addView(TextView(this).apply {
+            text = "本地 ASR 模型"
+            textSize = 12f
+            setTextColor(UIKit.TEXT_SECONDARY)
+            setPadding(dp(2), dp(14), dp(2), dp(6))
+        })
+        asrModelSpinner = Spinner(this).apply {
+            background = UIKit.roundedBg(this@MainActivity, UIKit.CARD_HI, 10)
+            setPadding(dp(8), 0, dp(8), 0)
+        }
+        asrModelSpinner.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_item,
+            listOf("SenseVoice（中英日韩粤）", "Whisper Tiny（英文·快）", "Whisper Base（英文·准）")
+        ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        asrModelSpinner.setSelection(store.asrModelIndex)
+        asrCard.addView(asrModelSpinner)
         root.addView(asrCard)
 
         // ── 翻译模型卡片 ──
@@ -889,17 +907,26 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         android.util.Log.i("MainActivity", "startCapture begin, asrModePos=$asrModeSelected")
         try {
             store.asrUrl = etAsrUrl.text.toString()
+            store.asrModelIndex = asrModelSpinner.selectedItemPosition
             val model = currentModelFromSpinner()
             store.activeModelIndex = modelSpinner.selectedItemPosition
-            // 本地模型目录：<externalFilesDir>/models/sense-voice/
-            val localModelDir = java.io.File(filesDir, "models/sense-voice").absolutePath
+            // 本地 ASR 模型目录（SenseVoice / Whisper 按选择）
+            val localModelDir = when (asrModelSpinner.selectedItemPosition) {
+                1 -> java.io.File(filesDir, "models/whisper-tiny").absolutePath
+                2 -> java.io.File(filesDir, "models/whisper-base").absolutePath
+                else -> java.io.File(filesDir, "models/sense-voice").absolutePath
+            }
             val asrMode = if (asrModeSelected == 1) "local" else "remote"
             android.util.Log.i("MainActivity", "startCapture: asrMode=$asrMode, modelDir=$localModelDir")
             if (asrMode == "local") {
-                val ok = java.io.File(localModelDir, "model.int8.onnx").exists()
+                // 按模型类型检查文件（SenseVoice: model.int8.onnx；Whisper: encoder*.onnx）
+                val ok = if (com.example.livetranslate.asr.LocalAsrEngine.detectType(localModelDir) == "whisper") {
+                    java.io.File(localModelDir).listFiles { f -> f.name.contains("encoder") && f.name.endsWith(".onnx") }?.isNotEmpty() == true
+                } else {
+                    java.io.File(localModelDir, "model.int8.onnx").exists()
+                }
                 if (!ok) {
-                    appendStatus("❌ 本地模型缺失，请下载 SenseVoice 模型（约 239MB）")
-                    // 自动弹出模型管理对话框引导下载
+                    appendStatus("❌ 本地 ASR 模型缺失，请先在模型管理页下载")
                     showModelManagerDialog()
                     return
                 }
@@ -912,6 +939,22 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 putExtra(CaptureService.EXTRA_ASR_MODE, asrMode)
                 putExtra(CaptureService.EXTRA_MODEL_DIR, localModelDir)
                 putExtra(CaptureService.EXTRA_MODEL_JSON, model.toJson().toString())
+            }
+            // Android 14+：FGS mediaProjection 权限在授权确认后异步授予，等待就绪再启动服务（避免 SecurityException）
+            if (Build.VERSION.SDK_INT >= 34) {
+                val perm = android.Manifest.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION
+                var waited = 0
+                while (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED && waited < 3000) {
+                    try {
+                        Thread.sleep(100)
+                    } catch (e: InterruptedException) {
+                    }
+                    waited += 100
+                }
+                if (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED) {
+                    appendStatus("⚠ FGS 权限未就绪（系统异步授予慢），请再次点击开始")
+                    return
+                }
             }
             android.util.Log.i("MainActivity", "startCapture: calling startForegroundService")
             if (Build.VERSION.SDK_INT >= 26) {
