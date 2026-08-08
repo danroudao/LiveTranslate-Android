@@ -94,3 +94,43 @@ ASR [<|en|>] 644ms: hello everyone this is a live translation test we are testin
 - 采样链：top_k(40) + top_p(0.9) + temp(0.3) + dist
 - JNI 崩溃排查链：addr2line 反汇编定位 → 纯 C++ 模拟器验证（库 OK）→ 回调隔离（#if 0）→
   定位 Attach/Detach 问题
+
+---
+
+## 更新记录（v0.12.2 → v0.12.6）
+
+### v0.12.2：KV 修复 + 性能优化 + 字幕节流
+
+**decode 失败根因**（服务运行几分钟后出现）：`llama_batch_get_one` 的 null pos 从 KV cache
+上次末尾继续 → 每次翻译 KV 单调累积 → ~7 次后写满 n_ctx=1024 → decode 失败。
+**修复**：显式 batch.pos 从 0 覆盖 + 每次 chat 前 `llama_memory_clear`。验证：48 次连续翻译零失败。
+
+**性能**：prefill 804ms → 207ms（`n_threads_batch=6` 并行），每句 1.75s → 0.35s（提速 5 倍）。
+排查中确认 gen 17ms/token 本就正常（"gen 900ms" 为日志标签含 prefill 的误导）。
+
+**字幕流式节流**：OverlayManager 120ms 合并高频 onPartial（v0.12.2）；v0.12.3 本地引擎
+不再流式更新字幕条（onFinal 一次性显示，消除整合跳动）。
+
+### v0.12.4：ASR 准确性专项
+
+- SenseVoice 固定 en 语言提示（auto 模式口音误检为 ja/zh 的核心修复）
+- Whisper 引擎接入（sherpa-onnx，arm64 可用；x86_64 模拟器 native 崩溃）
+- 远程 faster-whisper base 服务器（asr-server，172.17.0.1:8765）—— 口音场景首选
+- 实测（B 站真实视频）：whisper base 印度口音 ~90% 准确 vs SenseVoice auto 乱码
+
+### v0.12.5：模型管理分组
+
+ModelGroup 模型：引擎分组（ASR/LLM）+ 直观名称（SenseVoice·多语种 / Whisper Tiny·英文快 /
+Qwen3.5-2B·翻译均衡）+ 一键下载自动配套文件（encoder/decoder/tokens）+ VAD 移出管理页。
+
+### v0.12.6：稳定性
+
+- 状态日志截断 200 行（TextView 无限追加 → 内存增长 + O(n²) 重排）
+- 句切分优化：缩写（Mr./U.S./etc.）、数字（3.14）、省略号、连续标点（What?!）、闭合引号保护
+  —— 17 个用例全过（python 复刻逻辑验证后同步 Kotlin）
+
+### 后续方向记录（未实施 / 已放弃）
+
+- MiniMind2 超小型 LLM（26M/104M）：❌ 无翻译能力（8 句基准 0 正确，输出乱码）
+- 本地翻译模型整体移除（0.13.x 试行）：已回滚恢复（当前基线 v0.12.6 保留）
+- 0.13.x UI 两轮视觉评审改动：已回滚（状态卡上移/按钮去序号保留在 0.13.1；0.13.2 状态色/徽章等已撤销）

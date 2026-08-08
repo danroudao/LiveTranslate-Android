@@ -446,3 +446,62 @@ TTFB 实测：0.26s（流式）
 - 菜单/字幕窗用独立玻璃参数（menuBase 等），不随卡片纯色化
 - 状态栏按主题：浅色主题浅底+深图标（applyThemeSystemBars 必须在 setContentView 之后，否则 decorView null 崩溃）
 - 视觉验证：describe_image 视觉模型逐主题审查（极光/毛玻璃/黑块/重叠）
+
+---
+
+## 16. v0.12 本地 LLM 翻译引擎 + ASR 准确性优化（2026-08-08）
+
+### v0.12.x 主线（当前基线 v0.12.6）
+
+| 版本 | 内容 |
+|------|------|
+| v0.12.0 | 内嵌 llama.cpp 引擎（NDK + JNI + protocol=local + GGUF 下载管理） |
+| v0.12.1 | 本地 GGUF 自动发现切换 + 编辑对话框自动填地址 + 模型状态行 |
+| v0.12.2 | KV cache 累积 decode 失败修复 + prefill 线程优化（1.75s→0.35s）+ 字幕流式节流 120ms |
+| v0.12.3 | 本地引擎翻译不流式更新字幕（onFinal 一次性显示） |
+| v0.12.4 | SenseVoice 固定 en（口音误检修复）+ Whisper 引擎 + FGS 权限等待 |
+| v0.12.5 | 模型管理分组页（引擎分组/一键下载配套文件/VAD 移出） |
+| v0.12.6 | 状态日志截断 200 行 + 句切分优化（17 用例） |
+
+### 关键实现（v0.12）
+
+- 内嵌引擎：`app/src/main/cpp/jni_llm.cpp` + prebuilt 静态库（NDK 交叉编译 x86_64/arm64-v8a，脚本 `tools/ndk-build.sh`）
+- 非思考模式：手工拼 Qwen chatml prompt + **空 think 块**（`<|im_start|>assistant\n<think>\n\n</think>\n\n`，用 jinja2 渲染 GGUF 模板验证等价）
+- fscrypt 规避：`load_mode = LLAMA_LOAD_MODE_NONE`（模拟器 mmap 加载慢 300 倍）
+- JNI 回调：Java 线程直接调用，**禁止 Attach/DetachCurrentThread**（JVM 线程 Detach 后 env 失效 → 堆损坏段错误）
+- `llama_tokenize` 新版语义：首次调用（NULL,0）返回 **-n_tokens**（负数）
+
+### 踩坑（复现必读）
+
+| # | 坑 | 解决 |
+|---|----|------|
+| 1 | 模拟器 guest 无 AVX2（仅 AVX+SSE4.2），`-march=native` 编译 → SIGILL | `-DGGML_NATIVE=OFF -DGGML_AVX2=OFF -DGGML_AVX=ON` |
+| 2 | fscrypt 分区 mmap 加载 GGUF 慢 300 倍 | `--no-mmap` / `load_mode=NONE` |
+| 3 | KV cache 单调累积，~7 次翻译后写满 n_ctx → decode 失败 | 显式 batch.pos 从 0 覆盖 + 每次 `llama_memory_clear` |
+| 4 | prefill 慢（804ms） | `n_threads_batch=6`（模拟器 6 vCPU）→ 207ms |
+| 5 | "gen 900ms" 日志误导 | 日志标签含 prefill 总时长，实测 gen 17ms/token 正常 |
+| 6 | 模拟器 FGS mediaProjection 权限异步授予 → SecurityException | startCapture 等待权限就绪（≤3s）+ 模拟器二次授权偶发失败需重启 App 进程 |
+| 7 | 低版本号安装被拒（INSTALL_FAILED_VERSION_DOWNGRADE） | `adb install -r -d` 允许降级 |
+| 8 | docker cp 携带宿主 build 缓存 → 增量编译污染（旧 UI 打包） | 容器内 `rm -rf app/build` 后重编 |
+| 9 | sherpa-onnx Whisper 在 x86_64 模拟器 native 崩溃（int8/fp32 均崩） | 定位为 sherpa-onnx 兼容问题，arm64 真机可用；模拟器用 SenseVoice/远程 whisper |
+| 10 | 视觉模型评审工具（describe_image）模型名缺失 | 直接调 DMX API（qwen3.5-flash 支持图像）自建评审脚本 |
+
+### ASR 准确性实测（B 站真实视频）
+
+- 标准美语（乔布斯演讲）：SenseVoice 近乎完美
+- 印度口音（Asian Boss）：SenseVoice auto 误检语言（ja/zh 乱码）→ **固定 en 提示**部分恢复；**faster-whisper base（远程）准确率最高**
+- VAD 调优：threshold 0.45 / min_silence 0.6s / max_speech 8s → 切段 2-3s/段，字幕实时性提升
+- 视频素材获取：B 站搜索（wbi 签名限制）→ 模拟器 Chrome 拿 BV → `view` API 拿 cid → `playurl` API 拿直链（Referer: bilibili.com）→ 下载 push 模拟器播放
+
+### 版本回滚操作记录
+
+- 回滚到指定版本：`git checkout <commit> -- .` + 提交（如回滚 v0.12.6 = `a9eac95`）
+- 撤销单版本：`git revert <commit>`
+- 模拟器降级安装：`adb install -r -d <apk>`
+- 曾整体回滚（0.13.x → 0.12.6）后恢复本地翻译模型代码与 NDK 构建
+
+### 视觉模型 UI 评审流程
+
+1. `adb exec-out screencap -p` 截图
+2. 调 DMX API（qwen3.5-flash）传 base64 图 + 评审提示词（P0/P1/P2 排序）
+3. 按建议改代码 → 重编译 → 截图复评闭环
