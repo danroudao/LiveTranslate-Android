@@ -113,6 +113,8 @@ class LlmTranslator(
             body.put("enable_thinking", false)
             // extra_body：DeepSeek 旧接口风格（两者都发最大化兼容）
             body.put("extra_body", JSONObject().put("enable_thinking", false))
+            // chat_template_kwargs：本地 llama.cpp / llama-server（Qwen 模板）唯一识别的关思考参数
+            body.put("chat_template_kwargs", JSONObject().put("enable_thinking", false))
         }
         if (useJsonSchema) {
             body.put("response_format", JSONObject()
