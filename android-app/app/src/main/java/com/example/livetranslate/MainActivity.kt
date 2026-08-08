@@ -28,6 +28,7 @@ import com.example.livetranslate.benchmark.BenchmarkRunner
 import com.example.livetranslate.model.ModelConfig
 import com.example.livetranslate.model.ModelDownloader
 import com.example.livetranslate.model.ModelFile
+import com.example.livetranslate.model.ModelGroup
 import com.example.livetranslate.model.ModelRepository
 import com.example.livetranslate.model.SettingsStore
 import com.example.livetranslate.net.LlmTranslator
@@ -198,7 +199,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.12.4"
+            text = "v0.12.5"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -991,7 +992,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             setPadding(dp(20), dp(12), dp(20), dp(12))
         }
         container.addView(TextView(this).apply {
-            text = "模型存放到应用内部存储（卸载即清）。本地 ASR 需 SenseVoice 模型。"
+            text = "模型存放到应用内部存储（卸载即清）。点下载自动拉取该引擎全部必要文件（含辅助文件）。"
             textSize = 12f
             setTextColor(0xFF999999.toInt())
         })
@@ -999,11 +1000,30 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         val statusViews = mutableMapOf<String, TextView>()
         val progressViews = mutableMapOf<String, android.widget.ProgressBar>()
 
-        fun addRow(file: ModelFile) {
+        // 分组标题
+        fun addSection(title: String) {
             container.addView(TextView(this@MainActivity).apply {
-                text = "${file.fileName} (${"%.0f".format(file.sizeBytes / 1048576.0)} MB)"
-                textSize = 14f
+                text = title
+                textSize = 12f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(UIKit.TEXT_SECONDARY)
+                setPadding(dp(2), dp(14), dp(2), dp(6))
+            })
+        }
+
+        // 组行：直观名称 + 说明 + 状态 + 一键下载/删除（辅助文件自动配套）
+        fun addGroupRow(group: ModelGroup) {
+            container.addView(TextView(this@MainActivity).apply {
+                text = group.displayName
+                textSize = 14.5f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(UIKit.TEXT)
+            })
+            container.addView(TextView(this@MainActivity).apply {
+                text = group.description
+                textSize = 11.5f
+                setTextColor(UIKit.TEXT_SECONDARY)
+                setPadding(dp(2), dp(2), dp(2), dp(4))
             })
             val row = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
             val status = TextView(this@MainActivity).apply { textSize = 13f }
@@ -1017,63 +1037,71 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             row.addView(progress, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f))
             row.addView(btn)
             container.addView(row)
-            statusViews[file.fileName] = status
-            progressViews[file.fileName] = progress
+            statusViews[group.key] = status
+            progressViews[group.key] = progress
 
             fun refresh() {
-                when (val s = downloader.status(file)) {
-                    is ModelDownloader.DownloadStatus.DONE -> {
-                        status.text = "✓ 已下载"
-                        status.setTextColor(UIKit.GREEN)
-                        btn.text = "删除"
-                    }
-                    is ModelDownloader.DownloadStatus.PARTIAL -> {
-                        status.text = "已下载 %.0f%%".format(s.bytes * 100.0 / file.sizeBytes)
-                        btn.text = "继续下载"
-                    }
-                    else -> {
-                        status.text = "未下载"
-                        status.setTextColor(UIKit.TEXT_SECONDARY)
-                        btn.text = "下载"
-                    }
+                val done = group.downloadedCount(downloader)
+                val total = group.files.size
+                if (done == total) {
+                    status.text = "✓ 已下载 $total/$total 文件"
+                    status.setTextColor(UIKit.GREEN)
+                    btn.text = "删除"
+                } else if (done > 0) {
+                    status.text = "已下载 $done/$total 文件 · 继续"
+                    status.setTextColor(0xFFCCAA33.toInt())
+                    btn.text = "继续"
+                } else {
+                    status.text = "未下载 · ${"%.0f".format(group.totalBytes / 1048576.0)}MB"
+                    status.setTextColor(UIKit.TEXT_SECONDARY)
+                    btn.text = "下载"
                 }
             }
             refresh()
 
             btn.setOnClickListener {
-                when (downloader.status(file)) {
-                    is ModelDownloader.DownloadStatus.DONE -> {
-                        downloader.delete(file)
-                        refresh()
-                    }
-                    else -> {
-                        btn.isEnabled = false
-                        progress.visibility = android.view.View.VISIBLE
-                        status.text = "下载中…"
-                        Thread {
-                            val ok = downloader.download(file) { p ->
+                val done = group.downloadedCount(downloader)
+                if (done == group.files.size) {
+                    // 删除整组（含全部文件）
+                    for (f in group.files) downloader.delete(f)
+                    refresh()
+                    appendStatus("已删除: ${group.displayName}")
+                } else {
+                    // 一键下载缺失文件（辅助文件自动配套）
+                    btn.isEnabled = false
+                    progress.visibility = android.view.View.VISIBLE
+                    status.text = "下载中…"
+                    Thread {
+                        var okAll = true
+                        for (f in group.files) {
+                            if (downloader.status(f) is ModelDownloader.DownloadStatus.DONE) continue
+                            val ok = downloader.download(f) { p ->
                                 runOnUiThread {
                                     progress.progress = (p * 100).toInt()
-                                    status.text = "下载中 %.0f%%".format(p * 100)
+                                    status.text = "下载中 ${f.fileName.take(18)} %.0f%%".format(p * 100)
                                 }
                             }
-                            runOnUiThread {
-                                btn.isEnabled = true
-                                progress.visibility = android.view.View.GONE
-                                if (ok) {
-                                    appendStatus("模型下载完成: ${file.fileName}")
-                                } else {
-                                    status.text = "下载失败（检查网络）"
-                                }
-                                refresh()
+                            if (!ok) { okAll = false; break }
+                        }
+                        runOnUiThread {
+                            btn.isEnabled = true
+                            progress.visibility = android.view.View.GONE
+                            if (okAll) {
+                                appendStatus("模型组下载完成: ${group.displayName}")
+                            } else {
+                                status.text = "下载失败（检查网络）"
                             }
-                        }.start()
-                    }
+                            refresh()
+                        }
+                    }.start()
                 }
             }
         }
 
-        for (f in ModelRepository.ALL) addRow(f)
+        addSection("▸ 语音识别（ASR）")
+        for (g in ModelRepository.GROUPS.filter { it.kind == "asr" }) addGroupRow(g)
+        addSection("▸ 翻译模型（LLM）")
+        for (g in ModelRepository.GROUPS.filter { it.kind == "llm" }) addGroupRow(g)
 
         dialogBuilder()
             .setTitle("模型管理")
@@ -1081,6 +1109,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             .setPositiveButton("关闭", null)
             .show()
     }
+
 
     // ---------- 基准测试（对应 benchmark.py） ----------
 
