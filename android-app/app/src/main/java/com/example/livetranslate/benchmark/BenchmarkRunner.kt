@@ -44,39 +44,49 @@ class BenchmarkRunner(private val translator: LlmTranslator) {
 
     private val pool = Executors.newFixedThreadPool(4)
 
+    /** 阻塞运行全部基准句（调用方放后台线程）
+     *  本地推理服务（llama.cpp 单槽）：改为顺序执行——并发只会排队，顺序执行反映真实单句延迟并命中前缀缓存 */
     fun run(sourceLang: String = "en", timeoutPer: Long = 30): BenchSummary {
         val results = java.util.Collections.synchronizedList(mutableListOf<BenchResult>())
         val latch = CountDownLatch(BENCH_SENTENCES.size)
         var promptTokens = 0L
         var completionTokens = 0L
         val tokenLock = Any()
-        for (sentence in BENCH_SENTENCES) {
-            pool.execute {
-                val t0 = System.currentTimeMillis()
-                var translated = ""
-                var ok = false
-                val done = CountDownLatch(1)
-                try {
-                    translator.translateStreaming(
-                        sentence, sourceLang,
-                        onPartial = {},
-                        onFinal = { r ->
-                            translated = r
-                            ok = true
-                            done.countDown()
-                        },
-                        onError = { e ->
-                            Log.w(TAG, "bench failed: $e")
-                            done.countDown()
-                        },
-                    )
-                    done.await(timeoutPer, TimeUnit.SECONDS)
-                } catch (e: Exception) {
-                    Log.w(TAG, "bench exception: ${e.message}")
-                }
-                val latency = System.currentTimeMillis() - t0
-                results.add(BenchResult(sentence, translated, latency, ok && translated.isNotEmpty()))
-                latch.countDown()
+        val local = LlmTranslator.isLocalApiBase(translator.apiBase)
+
+        fun runOne(sentence: String) {
+            val t0 = System.currentTimeMillis()
+            var translated = ""
+            var ok = false
+            val done = CountDownLatch(1)
+            try {
+                translator.translateStreaming(
+                    sentence, sourceLang,
+                    onPartial = {},
+                    onFinal = { r ->
+                        translated = r
+                        ok = true
+                        done.countDown()
+                    },
+                    onError = { e ->
+                        Log.w(TAG, "bench failed: $e")
+                        done.countDown()
+                    },
+                )
+                done.await(timeoutPer, TimeUnit.SECONDS)
+            } catch (e: Exception) {
+                Log.w(TAG, "bench exception: ${e.message}")
+            }
+            val latency = System.currentTimeMillis() - t0
+            results.add(BenchResult(sentence, translated, latency, ok && translated.isNotEmpty()))
+            latch.countDown()
+        }
+
+        if (local) {
+            for (sentence in BENCH_SENTENCES) runOne(sentence)
+        } else {
+            for (sentence in BENCH_SENTENCES) {
+                pool.execute { runOne(sentence) }
             }
         }
         latch.await(timeoutPer + 5, TimeUnit.SECONDS)

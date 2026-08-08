@@ -88,6 +88,8 @@ class CaptureService : Service() {
     private val segmentQueue = LinkedBlockingQueue<Pair<String, FloatArray?>>(16)
     private val asrExecutor = Executors.newSingleThreadExecutor()
     private val netExecutor = Executors.newFixedThreadPool(2)
+    /** 本地 LLM（llama.cpp 单槽）专用串行执行器：避免并发排队，且让前缀缓存持续命中 */
+    private val localExecutor = Executors.newSingleThreadExecutor()
 
     private var running = false
 
@@ -236,6 +238,7 @@ class CaptureService : Service() {
             contextTurns = model.contextTurns,
             timeoutSec = model.timeout.toLong(),
             protocol = model.protocol,
+            modelDir = java.io.File(this.filesDir, "models/llm").absolutePath,
         )
         this.overlay = OverlayManager(this, com.example.livetranslate.model.SettingsStore(this)).also { it.show() }
         this.extraLanguages = model.extraLanguages
@@ -383,11 +386,13 @@ class CaptureService : Service() {
         val translator = this.translator ?: return
         val modelName = translator.model
         val modelId = translator.apiBase
-        if (translator.apiKey.isEmpty()) {
+        if (translator.protocol != "local" && translator.apiKey.isEmpty()) {
             overlay?.update(text, "(未配置 API Key)")
             return
         }
-        netExecutor.execute {
+        // 本地推理服务单槽串行处理：并发请求会排队且前缀缓存失效，串行化后每句直接命中缓存
+        val exec = if (LlmTranslator.isLocalApiBase(translator.apiBase)) localExecutor else netExecutor
+        exec.execute {
             translator.translateStreaming(
                 text, sourceLang,
                 onPartial = { partial ->
@@ -420,8 +425,10 @@ class CaptureService : Service() {
         if (extra.isEmpty()) return
         val results = java.util.concurrent.ConcurrentHashMap<String, String>()
         val done = java.util.concurrent.CountDownLatch(extra.size)
+        // 本地模式：附加语言也走串行执行器（避免本地单槽服务器排队）
+        val exec = if (LlmTranslator.isLocalApiBase(translator?.apiBase ?: "")) localExecutor else netExecutor
         for (lang in extra) {
-            netExecutor.execute {
+            exec.execute {
                 try {
                     val t = translator ?: return@execute
                     val r = t.withTargetLanguage(lang).translate(text, sourceLang)

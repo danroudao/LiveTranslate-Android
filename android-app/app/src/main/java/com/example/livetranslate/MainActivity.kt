@@ -190,8 +190,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
         statusText = TextView(this).apply {
             text = "待机"
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            textSize = 12f
             setTextColor(UIKit.TEXT_SECONDARY)
             setPadding(dp(6), 0, dp(10), 0)
         }
@@ -200,7 +199,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.13.1"
+            text = "v0.12.6"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -232,14 +231,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         // ── 主操作卡片（参考图步骤卡：Q 版头像 + 按钮） ──
         root.addView(UIKit.sectionLabel(this, "操作"))
         val actionCard = UIKit.card(this)
-        val btnStartBtn = UIKit.iosButton(this, "▶ 开始翻译", UIKit.ButtonStyle.PRIMARY)
+        val btnStartBtn = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY)
         btnStartBtn.setOnClickListener {
             if (com.example.livetranslate.pipeline.CaptureService.isRunning) {
                 // 运行中：点击停止服务
                 startService(Intent(this@MainActivity, com.example.livetranslate.pipeline.CaptureService::class.java).apply {
                     action = com.example.livetranslate.pipeline.CaptureService.ACTION_STOP
                 })
-                btnStartBtn.text = "▶ 开始翻译"
+                btnStartBtn.text = "① 开始翻译"
                 setRunning(false)
                 appendStatus("服务已停止")
             } else {
@@ -249,7 +248,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         btnStart = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_phone.webp", 40), btnStartBtn)
                    else btnStartBtn
         actionCard.addView(btnStart)
-        val btnTestBtn = UIKit.iosButton(this, "🔊 播放测试语音", UIKit.ButtonStyle.SECONDARY) {
+        val btnTestBtn = UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
             playTestAudio()
         }
         btnTestAudio = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_ear.webp", 40), btnTestBtn)
@@ -258,7 +257,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(10)
         })
-        val accBtn = UIKit.iosButton(this, "🖥 字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44)
+        val accBtn = UIKit.iosButton(this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44)
         val accRow = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_doc.webp", 40), accBtn)
                      else accBtn
         val btnAccessibility = accBtn
@@ -267,11 +266,11 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isVisible) {
                     com.example.livetranslate.pipeline.SubtitleAccessibilityService.hideSubtitleBar()
                     appendStatus("字幕条已隐藏（再次点击显示）")
-                    btnAccessibility.text = "🖥 字幕条"
+                    btnAccessibility.text = "③ 无障碍字幕条"
                 } else {
                     com.example.livetranslate.pipeline.SubtitleAccessibilityService.showSubtitleBar()
                     appendStatus("字幕条已显示 ✓（屏幕底部）")
-                    btnAccessibility.text = "🖥 字幕条（已显示）"
+                    btnAccessibility.text = "③ 无障碍字幕条（已显示）"
                 }
             } else {
                 appendStatus("请开启「LiveTranslate 字幕条」无障碍服务后返回")
@@ -298,31 +297,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 })
             })
         }
-
-        // ── 状态卡片（核心反馈：上移显示，用户关注 ASR/译文）──
-        root.addView(UIKit.sectionLabel(this, "状态"))
-        val statusCard = UIKit.card(this)
-        asrView = TextView(this).apply {
-            textSize = 14f
-            setTextColor(0xFFAAAAAA.toInt())
-            setPadding(0, dp(2), 0, dp(6))
-        }
-        tlView = TextView(this).apply {
-            textSize = 17f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFFFFFFF.toInt())
-            setPadding(0, 0, 0, dp(8))
-        }
-        statusView = TextView(this).apply {
-            textSize = 11.5f
-            setTextColor(0xFF66BB66.toInt())
-            typeface = android.graphics.Typeface.MONOSPACE
-            setLineSpacing(0f, 1.15f)
-        }
-        statusCard.addView(asrView)
-        statusCard.addView(tlView)
-        statusCard.addView(statusView)
-        root.addView(statusCard)
 
         // ── ASR 引擎卡片 ──
         root.addView(UIKit.sectionLabel(this, "ASR 引擎"))
@@ -409,7 +383,15 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         val btnDel = UIKit.pillButton(this, "删除", matchWidth = true) {
             val idx = store.activeModelIndex
+            val m = store.models.getOrNull(idx)
             store.removeModel(idx)
+            // 本地模型条目：连 GGUF 文件一起删除（否则自动发现会复活）
+            if (m?.protocol == "local") {
+                val f = java.io.File(filesDir, "models/llm/${m.model}")
+                if (f.exists() && f.delete()) {
+                    appendStatus("已删除模型与文件: ${m.model}")
+                }
+            }
             refreshModelSpinner()
             appendStatus("已删除模型 #$idx")
         }
@@ -420,8 +402,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         modelCard.addView(modelBtnRow)
         root.addView(modelCard)
-
-
 
         // ── 工具卡片（第一版：纯文字按钮） ──
         root.addView(UIKit.sectionLabel(this, "工具"))
@@ -434,7 +414,32 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             marginStart = dp(10)
         })
         toolCard.addView(toolRow)
+        root.addView(toolCard)
 
+        // ── 状态卡片 ──
+        root.addView(UIKit.sectionLabel(this, "状态"))
+        val statusCard = UIKit.card(this)
+        asrView = TextView(this).apply {
+            textSize = 14f
+            setTextColor(0xFFAAAAAA.toInt())
+            setPadding(0, dp(2), 0, dp(6))
+        }
+        tlView = TextView(this).apply {
+            textSize = 17f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(0, 0, 0, dp(8))
+        }
+        statusView = TextView(this).apply {
+            textSize = 11.5f
+            setTextColor(0xFF66BB66.toInt())
+            typeface = android.graphics.Typeface.MONOSPACE
+            setLineSpacing(0f, 1.15f)
+        }
+        statusCard.addView(asrView)
+        statusCard.addView(tlView)
+        statusCard.addView(statusView)
+        root.addView(statusCard)
 
         val scroll = ScrollView(this).apply {
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -447,6 +452,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     }
 
     private fun refreshModelSpinner() {
+        syncLocalModels()
         val models = store.models.ifEmpty { listOf(store.activeModel()) }
         val names = models.map { it.name + " · " + it.model + "  ▾" }
         modelSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, names).apply {
@@ -457,18 +463,55 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         updateModelStatus(models[idx])
     }
 
+    /** 自动发现已下载的本地 GGUF 模型（filesDir/models/llm 目录下 .gguf 文件），合并进模型列表尾部 */
+    private fun syncLocalModels() {
+        val dir = java.io.File(filesDir, "models/llm")
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".gguf") }
+            ?.sortedBy { it.length() } ?: emptyList()
+        val remote = store.models.filter { it.protocol != "local" }
+        val local = files.map { f ->
+            store.models.firstOrNull { it.protocol == "local" && it.model == f.name } ?: run {
+                val tag = Regex("Qwen3\\.5-(\\d+\\.?\\d*B)").find(f.name)?.groupValues?.get(1)
+                    ?: f.name.removeSuffix(".gguf")
+                ModelConfig(
+                    name = "本地 $tag",
+                    apiBase = "local",   // 本地引擎：地址自动填 local（需求 2）
+                    apiKey = "",
+                    model = f.name,
+                    targetLanguage = "zh",
+                    streaming = true,
+                    noThink = true,
+                    timeout = 60,
+                    protocol = "local",
+                )
+            }
+        }
+        val merged = remote + local
+        if (merged != store.models) store.models = merged
+    }
 
     /** 协议显示名 */
     private fun protocolLabel(p: String): String = when (p) {
         "anthropic" -> "Anthropic"
         "gemini" -> "Gemini"
+        "local" -> "本地引擎"
         else -> "OpenAI 兼容"
     }
 
-    /** 当前模型状态行：协议 / 模型 / API Base（需求 3） */
+    /** 当前模型状态行：协议 / 模型 / 下载与加载状态（需求 3） */
     private fun updateModelStatus(model: ModelConfig) {
         if (!::modelStatusText.isInitialized) return
-        modelStatusText.text = "● ${protocolLabel(model.protocol)} · ${model.model} · ${model.apiBase}"
+        modelStatusText.text = if (model.protocol == "local") {
+            val f = java.io.File(filesDir, "models/llm/${model.model}")
+            val loaded = f.exists() && com.example.livetranslate.asr.LocalLlmEngine.isModelLoaded(f.absolutePath)
+            "● ${protocolLabel(model.protocol)} · ${model.model} · " + when {
+                !f.exists() -> "⚠ 未下载（模型管理页下载）"
+                loaded -> "已加载 ✓"
+                else -> "已下载 · 首次翻译时加载"
+            }
+        } else {
+            "● ${protocolLabel(model.protocol)} · ${model.model} · ${model.apiBase}"
+        }
     }
 
     private fun currentModelFromSpinner(): ModelConfig {
@@ -481,7 +524,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         runOnUiThread {
             statusDot?.background = UIKit.roundedBg(
                 this, if (running) UIKit.GREEN else UIKit.TEXT_TERTIARY, 4)
-            statusText?.text = if (running) "● 运行中" else "待机"
+            statusText?.text = if (running) "运行中" else "待机"
             if (running) {
                 IOSMotion.breathe(statusDot ?: return@runOnUiThread)
             } else {
@@ -530,12 +573,36 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         protocolSpinner.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_item,
-            listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)")
+            listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)", "本地 LLM (llama.cpp)")
         ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
         protocolSpinner.setSelection(
-            when (model.protocol) { "anthropic" -> 1; "gemini" -> 2; else -> 0 }
+            when {
+                model.protocol == "local" || model.apiBase == "local" -> 3
+                model.protocol == "anthropic" -> 1
+                model.protocol == "gemini" -> 2
+                else -> 0
+            }
         )
-
+        // 需求 2：选本地 LLM 协议时自动填入 local 地址（无需手填），并提示模型名填 GGUF 文件名
+        protocolSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (pos == 3) {
+                    etBase.setText("local")
+                    etKey.setText("")
+                    etModel.hint = "GGUF 文件名，如 Qwen3.5-2B-Q4_K_M.gguf"
+                } else {
+                    etModel.hint = "模型名"
+                }
+            }
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+        container.addView(protocolSpinner)
+        container.addView(TextView(this).apply {
+            text = "本地 LLM：模型名填 GGUF 文件名（模型管理页下载后自动出现在模型列表）"
+            textSize = 11f
+            setTextColor(0xFFCC7733.toInt())
+            setPadding(dp(2), dp(6), dp(2), 0)
+        })
 
         // 拉取模型列表（按协议对应端点，防止手输模型名出错）
         btnFetchModels.setOnClickListener {
@@ -652,7 +719,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                     extraLanguages = etExtra.text.toString()
                         .split(",").map { it.trim() }.filter { it.isNotEmpty() },
                     protocol = when (protocolSpinner.selectedItemPosition) {
-                        1 -> "anthropic"; 2 -> "gemini"; else -> "openai"
+                        1 -> "anthropic"; 2 -> "gemini"; 3 -> "local"; else -> "openai"
                     },
                 )
                 if (index < 0) store.addModel(updated) else store.setActiveModel(index, updated)
@@ -913,7 +980,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             appendStatus("服务已启动（${model.name} / ${model.model}）…")
             setRunning(true)
             // 主按钮切换为停止
-            (btnStart as? TextView)?.text = "■ 停止服务"
+            (btnStart as? TextView)?.text = "① 停止服务"
         } catch (e: Throwable) {
             android.util.Log.e("MainActivity", "startCapture failed", e)
             appendStatus("❌ 启动失败: ${e.message}")
@@ -924,7 +991,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         super.onResume()
         // 同步主按钮状态（服务可能被外部停止/系统回收）
         (btnStart as? TextView)?.text =
-            if (com.example.livetranslate.pipeline.CaptureService.isRunning) "■ 停止服务" else "▶ 开始翻译"
+            if (com.example.livetranslate.pipeline.CaptureService.isRunning) "① 停止服务" else "① 开始翻译"
         // 刷新模型列表（模型管理页可能刚下载/删除 GGUF）与状态行
         if (::modelSpinner.isInitialized) refreshModelSpinner()
     }
@@ -1046,6 +1113,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
         addSection("▸ 语音识别（ASR）")
         for (g in ModelRepository.GROUPS.filter { it.kind == "asr" }) addGroupRow(g)
+        addSection("▸ 翻译模型（LLM）")
+        for (g in ModelRepository.GROUPS.filter { it.kind == "llm" }) addGroupRow(g)
 
         dialogBuilder()
             .setTitle("模型管理")
@@ -1059,7 +1128,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     private fun runBenchmark() {
         val model = currentModelFromSpinner()
-        if (model.apiKey.isEmpty()) {
+        // 本地 LLM 模式无需 API Key
+        if (model.protocol != "local" && model.apiKey.isEmpty()) {
             appendStatus("❌ 请先配置 API Key 再跑基准测试")
             return
         }
@@ -1072,6 +1142,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 noThink = model.noThink, jsonResponse = model.jsonResponse,
                 contextTurns = model.contextTurns, timeoutSec = model.timeout.toLong(),
                 protocol = model.protocol,
+                modelDir = java.io.File(this.filesDir, "models/llm").absolutePath,
             )
             val runner = BenchmarkRunner(translator)
             val summary = runner.run()

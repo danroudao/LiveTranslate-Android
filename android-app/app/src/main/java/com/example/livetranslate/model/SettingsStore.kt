@@ -11,10 +11,9 @@ class SettingsStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("lt_settings", Context.MODE_PRIVATE)
 
-    /** 模型列表（对应 user_settings.json "models"）；过滤已废弃的本地 LLM 条目（protocol=local） */
+    /** 模型列表（对应 user_settings.json "models"） */
     var models: List<ModelConfig>
         get() = ModelConfig.listFromJson(prefs.getString(KEY_MODELS, null))
-            .filter { it.protocol != "local" && it.apiBase != "local" }
         set(value) = prefs.edit().putString(KEY_MODELS, ModelConfig.listToJson(value)).apply()
 
     /** 活动模型索引（对应 "active_model"） */

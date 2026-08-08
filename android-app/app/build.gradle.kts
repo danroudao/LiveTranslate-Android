@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.livetranslate"
         minSdk = 29
         targetSdk = 34
-        versionCode = 18
-        versionName = "0.13.1"
+        versionCode = 16
+        versionName = "0.12.6"
 
         // 真机 arm64-v8a + 模拟器 x86_64（sherpa-onnx 原生库占体积，过滤冗余 ABI）
         ndk {
@@ -26,6 +26,14 @@ android {
             isMinifyEnabled = false
         }
     }
+
+    // 内嵌 llama.cpp 推理引擎（jni_llm.cpp + NDK 预编译静态库）
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
+    ndkVersion = "26.1.10909125"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
