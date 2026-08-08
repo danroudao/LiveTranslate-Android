@@ -16,17 +16,81 @@ class InterimSplitter {
     companion object {
         private const val TAG = "InterimSplitter"
 
-        /** 句末标点（中日英常用）——按此切分并保留标点 */
-        private val SENTENCE_END = Regex("(?<=[。！？!?.])\\s*")
+        /** 句末标点：中文句号/叹问 + 英文句号/叹问 */
+        private const val CJK_TERMINAL = "。！？"
+        private const val EN_TERMINAL = "!?"
+
+        /** 常见英文缩写（后跟句点不切分：Mr. Smith / U.S. / etc.） */
+        private val ABBREVIATIONS = setOf(
+            "mr", "mrs", "ms", "dr", "st", "sr", "jr", "prof", "rev", "gen", "col",
+            "inc", "ltd", "co", "corp", "dept", "univ", "assn", "bros",
+            "etc", "vs", "e.g", "i.e", "u.s", "u.k", "u.n", "no", "fig", "al",
+            "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+            "approx", "est", "min", "max", "hr", "sec", "mph", "kg", "cm", "mm",
+        )
+
         private const val SHORT_UTTERANCE_ALNUM = 8
         private const val CJK_COMMA_MIN = 25
         private const val WESTERN_COMMA_MIN = 60
     }
 
-    /** 切分为句子列表；无法切分时返回单元素列表 */
+    /**
+     * 判断位置 i 是否为句末切分点（带缩写/数字/连续标点保护）。
+     */
+    private fun shouldSplitAt(text: String, i: Int): Boolean {
+        val c = text[i]
+        if (c in CJK_TERMINAL || c in EN_TERMINAL) return true
+        if (c != '.') return false
+        // 点后紧跟字母：缩写中间点（U.S.）或粘连文本（hello.World）不切
+        if (i < text.length - 1 && text[i + 1].isLetter()) return false
+        // 数字小数点不切：3.14 / 1.5
+        if (i > 0 && i < text.length - 1 && text[i - 1].isDigit() && text[i + 1].isDigit()) return false
+        // 连续点（省略号 …/...）只在最后一个点切
+        if (i > 0 && text[i - 1] == '.') return false
+        if (i < text.length - 1 && text[i + 1] == '.') return false
+        // 常见缩写不切：Mr. / U.S. / etc.
+        return !isAbbreviation(text, i)
+    }
+
+    /** 取句点前的单词片段（含中间点如 u.s.），匹配缩写表 */
+    private fun isAbbreviation(text: String, dotIndex: Int): Boolean {
+        var start = dotIndex - 1
+        while (start >= 0 && (text[start].isLetter() || text[start] == '.')) start--
+        start++
+        if (dotIndex - start > 16) return false
+        val token = text.substring(start, dotIndex).lowercase()
+        return token in ABBREVIATIONS
+    }
+
+    /**
+     * 切分为句子列表（手写扫描，O(n)）；无法切分时返回单元素列表。
+     * 改进：英文缩写（Mr./U.S./etc.）、数字小数点（3.14）、省略号（…）不再误切。
+     */
     fun splitSentences(text: String): List<String> {
-        val parts = text.split(SENTENCE_END).filter { it.isNotBlank() }
-        if (parts.size > 1) return parts
+        val result = mutableListOf<String>()
+        var start = 0
+        var i = 0
+        while (i < text.length) {
+            if (shouldSplitAt(text, i)) {
+                var j = i + 1
+                // 吞掉连续句末标点（What?! / 真的吗？！）归属前句
+                while (j < text.length && (text[j] in CJK_TERMINAL || text[j] in EN_TERMINAL)) j++
+                // 吞掉闭合引号（他说“你好。” → 引号归属前句）
+                while (j < text.length && text[j] in "\u201d\"\u2019\u300d\u300f") j++
+                while (j < text.length && text[j].isWhitespace()) j++
+                val sentence = text.substring(start, j).trim()
+                if (sentence.isNotEmpty()) result.add(sentence)
+                start = j
+                i = j
+            } else {
+                i++
+            }
+        }
+        if (start < text.length) {
+            val tail = text.substring(start).trim()
+            if (tail.isNotEmpty()) result.add(tail)
+        }
+        if (result.isNotEmpty()) return result
 
         // 逗号兜底（长句降低延迟）：CJK「、」25 字符；全部逗号 60 字符
         val minLen = if (text.contains('、')) CJK_COMMA_MIN else WESTERN_COMMA_MIN
@@ -45,7 +109,7 @@ class InterimSplitter {
                 i--
             }
         }
-        return parts
+        return listOf(text)
     }
 
     /** ≤8 个字母数字字符（可能为噪声/语气词/碎片） */

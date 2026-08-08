@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.12.5"
+            text = "v0.12.6"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -858,8 +858,21 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     private fun appendStatus(s: String) {
         runOnUiThread {
-            statusView.text = "${statusView.text}\n${java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date())} $s"
+            val line = java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(java.util.Date()) + " " + s
+            val newText = if (statusView.text.isNullOrEmpty()) line
+            else "${statusView.text}\n$line"
+            // 截断：保留最近 MAX_STATUS_LINES 行（运行数小时后日志可达数万行，
+            // 无限追加会导致 TextView 内存增长 + 每次 setText 全量重排 O(n²)）
+            val lines = newText.split('\n')
+            statusView.text = if (lines.size > MAX_STATUS_LINES) {
+                lines.takeLast(MAX_STATUS_LINES).joinToString("\n")
+            } else newText
         }
+    }
+
+    companion object {
+        /** 状态日志保留行数（超出截断，防内存/渲染膨胀） */
+        private const val MAX_STATUS_LINES = 200
     }
 
     // ---------- 权限 ----------
