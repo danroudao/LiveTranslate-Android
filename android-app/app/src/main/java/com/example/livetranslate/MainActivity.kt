@@ -190,7 +190,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
         statusText = TextView(this).apply {
             text = "待机"
-            textSize = 12f
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(UIKit.TEXT_SECONDARY)
             setPadding(dp(6), 0, dp(10), 0)
         }
@@ -199,7 +200,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.13.0"
+            text = "v0.13.1"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -231,14 +232,14 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         // ── 主操作卡片（参考图步骤卡：Q 版头像 + 按钮） ──
         root.addView(UIKit.sectionLabel(this, "操作"))
         val actionCard = UIKit.card(this)
-        val btnStartBtn = UIKit.iosButton(this, "① 开始翻译", UIKit.ButtonStyle.PRIMARY)
+        val btnStartBtn = UIKit.iosButton(this, "▶ 开始翻译", UIKit.ButtonStyle.PRIMARY)
         btnStartBtn.setOnClickListener {
             if (com.example.livetranslate.pipeline.CaptureService.isRunning) {
                 // 运行中：点击停止服务
                 startService(Intent(this@MainActivity, com.example.livetranslate.pipeline.CaptureService::class.java).apply {
                     action = com.example.livetranslate.pipeline.CaptureService.ACTION_STOP
                 })
-                btnStartBtn.text = "① 开始翻译"
+                btnStartBtn.text = "▶ 开始翻译"
                 setRunning(false)
                 appendStatus("服务已停止")
             } else {
@@ -248,7 +249,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         btnStart = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_phone.webp", 40), btnStartBtn)
                    else btnStartBtn
         actionCard.addView(btnStart)
-        val btnTestBtn = UIKit.iosButton(this, "② 播放测试语音（英文）", UIKit.ButtonStyle.SECONDARY) {
+        val btnTestBtn = UIKit.iosButton(this, "🔊 播放测试语音", UIKit.ButtonStyle.SECONDARY) {
             playTestAudio()
         }
         btnTestAudio = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_ear.webp", 40), btnTestBtn)
@@ -257,7 +258,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(10)
         })
-        val accBtn = UIKit.iosButton(this, "③ 无障碍字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44)
+        val accBtn = UIKit.iosButton(this, "🖥 字幕条", UIKit.ButtonStyle.SECONDARY, heightDp = 44)
         val accRow = if (vtuberTheme) stepRow(this, UIKit.roundAvatar(this, "img/chibi_doc.webp", 40), accBtn)
                      else accBtn
         val btnAccessibility = accBtn
@@ -266,11 +267,11 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isVisible) {
                     com.example.livetranslate.pipeline.SubtitleAccessibilityService.hideSubtitleBar()
                     appendStatus("字幕条已隐藏（再次点击显示）")
-                    btnAccessibility.text = "③ 无障碍字幕条"
+                    btnAccessibility.text = "🖥 字幕条"
                 } else {
                     com.example.livetranslate.pipeline.SubtitleAccessibilityService.showSubtitleBar()
                     appendStatus("字幕条已显示 ✓（屏幕底部）")
-                    btnAccessibility.text = "③ 无障碍字幕条（已显示）"
+                    btnAccessibility.text = "🖥 字幕条（已显示）"
                 }
             } else {
                 appendStatus("请开启「LiveTranslate 字幕条」无障碍服务后返回")
@@ -297,6 +298,31 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 })
             })
         }
+
+        // ── 状态卡片（核心反馈：上移显示，用户关注 ASR/译文）──
+        root.addView(UIKit.sectionLabel(this, "状态"))
+        val statusCard = UIKit.card(this)
+        asrView = TextView(this).apply {
+            textSize = 14f
+            setTextColor(0xFFAAAAAA.toInt())
+            setPadding(0, dp(2), 0, dp(6))
+        }
+        tlView = TextView(this).apply {
+            textSize = 17f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(0, 0, 0, dp(8))
+        }
+        statusView = TextView(this).apply {
+            textSize = 11.5f
+            setTextColor(0xFF66BB66.toInt())
+            typeface = android.graphics.Typeface.MONOSPACE
+            setLineSpacing(0f, 1.15f)
+        }
+        statusCard.addView(asrView)
+        statusCard.addView(tlView)
+        statusCard.addView(statusView)
+        root.addView(statusCard)
 
         // ── ASR 引擎卡片 ──
         root.addView(UIKit.sectionLabel(this, "ASR 引擎"))
@@ -395,6 +421,8 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         modelCard.addView(modelBtnRow)
         root.addView(modelCard)
 
+
+
         // ── 工具卡片（第一版：纯文字按钮） ──
         root.addView(UIKit.sectionLabel(this, "工具"))
         val toolCard = UIKit.card(this, padding = 10)
@@ -406,32 +434,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             marginStart = dp(10)
         })
         toolCard.addView(toolRow)
-        root.addView(toolCard)
 
-        // ── 状态卡片 ──
-        root.addView(UIKit.sectionLabel(this, "状态"))
-        val statusCard = UIKit.card(this)
-        asrView = TextView(this).apply {
-            textSize = 14f
-            setTextColor(0xFFAAAAAA.toInt())
-            setPadding(0, dp(2), 0, dp(6))
-        }
-        tlView = TextView(this).apply {
-            textSize = 17f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFFFFFFF.toInt())
-            setPadding(0, 0, 0, dp(8))
-        }
-        statusView = TextView(this).apply {
-            textSize = 11.5f
-            setTextColor(0xFF66BB66.toInt())
-            typeface = android.graphics.Typeface.MONOSPACE
-            setLineSpacing(0f, 1.15f)
-        }
-        statusCard.addView(asrView)
-        statusCard.addView(tlView)
-        statusCard.addView(statusView)
-        root.addView(statusCard)
 
         val scroll = ScrollView(this).apply {
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -478,7 +481,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         runOnUiThread {
             statusDot?.background = UIKit.roundedBg(
                 this, if (running) UIKit.GREEN else UIKit.TEXT_TERTIARY, 4)
-            statusText?.text = if (running) "运行中" else "待机"
+            statusText?.text = if (running) "● 运行中" else "待机"
             if (running) {
                 IOSMotion.breathe(statusDot ?: return@runOnUiThread)
             } else {
@@ -910,7 +913,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             appendStatus("服务已启动（${model.name} / ${model.model}）…")
             setRunning(true)
             // 主按钮切换为停止
-            (btnStart as? TextView)?.text = "① 停止服务"
+            (btnStart as? TextView)?.text = "■ 停止服务"
         } catch (e: Throwable) {
             android.util.Log.e("MainActivity", "startCapture failed", e)
             appendStatus("❌ 启动失败: ${e.message}")
@@ -921,7 +924,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         super.onResume()
         // 同步主按钮状态（服务可能被外部停止/系统回收）
         (btnStart as? TextView)?.text =
-            if (com.example.livetranslate.pipeline.CaptureService.isRunning) "① 停止服务" else "① 开始翻译"
+            if (com.example.livetranslate.pipeline.CaptureService.isRunning) "■ 停止服务" else "▶ 开始翻译"
         // 刷新模型列表（模型管理页可能刚下载/删除 GGUF）与状态行
         if (::modelSpinner.isInitialized) refreshModelSpinner()
     }

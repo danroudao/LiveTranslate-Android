@@ -38,11 +38,11 @@ class SileroVadEngine(context: Context) {
         }
         val sileroCfg = SileroVadModelConfig(
             modelFile.absolutePath,  // model
-            0.5f,                    // threshold
-            0.8f,                    // minSilenceDuration
+            0.45f,                   // threshold（0.5→0.45：口音/弱音量更易触发，快语速适配）
+            0.6f,                    // minSilenceDuration（0.8→0.6：快语速停顿短，切段更及时）
             0.3f,                    // minSpeechDuration
             WINDOW,                  // windowSize (Int)
-            5.0f,                    // maxSpeechDuration
+            8.0f,                    // maxSpeechDuration（5→8：长句不截断）
         )
         val cfg = VadModelConfig(
             sileroCfg,           // SileroVadModelConfig
