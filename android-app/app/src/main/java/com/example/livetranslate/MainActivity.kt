@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         headerRow2.addView(TextView(this).apply {
-            text = "v0.12.6"
+            text = "v0.13.0"
             textSize = 11f
             setTextColor(UIKit.TEXT_SECONDARY)
             gravity = Gravity.CENTER
@@ -383,15 +383,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         val btnDel = UIKit.pillButton(this, "删除", matchWidth = true) {
             val idx = store.activeModelIndex
-            val m = store.models.getOrNull(idx)
             store.removeModel(idx)
-            // 本地模型条目：连 GGUF 文件一起删除（否则自动发现会复活）
-            if (m?.protocol == "local") {
-                val f = java.io.File(filesDir, "models/llm/${m.model}")
-                if (f.exists() && f.delete()) {
-                    appendStatus("已删除模型与文件: ${m.model}")
-                }
-            }
             refreshModelSpinner()
             appendStatus("已删除模型 #$idx")
         }
@@ -452,7 +444,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
     }
 
     private fun refreshModelSpinner() {
-        syncLocalModels()
         val models = store.models.ifEmpty { listOf(store.activeModel()) }
         val names = models.map { it.name + " · " + it.model + "  ▾" }
         modelSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, names).apply {
@@ -463,55 +454,18 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         updateModelStatus(models[idx])
     }
 
-    /** 自动发现已下载的本地 GGUF 模型（filesDir/models/llm 目录下 .gguf 文件），合并进模型列表尾部 */
-    private fun syncLocalModels() {
-        val dir = java.io.File(filesDir, "models/llm")
-        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".gguf") }
-            ?.sortedBy { it.length() } ?: emptyList()
-        val remote = store.models.filter { it.protocol != "local" }
-        val local = files.map { f ->
-            store.models.firstOrNull { it.protocol == "local" && it.model == f.name } ?: run {
-                val tag = Regex("Qwen3\\.5-(\\d+\\.?\\d*B)").find(f.name)?.groupValues?.get(1)
-                    ?: f.name.removeSuffix(".gguf")
-                ModelConfig(
-                    name = "本地 $tag",
-                    apiBase = "local",   // 本地引擎：地址自动填 local（需求 2）
-                    apiKey = "",
-                    model = f.name,
-                    targetLanguage = "zh",
-                    streaming = true,
-                    noThink = true,
-                    timeout = 60,
-                    protocol = "local",
-                )
-            }
-        }
-        val merged = remote + local
-        if (merged != store.models) store.models = merged
-    }
 
     /** 协议显示名 */
     private fun protocolLabel(p: String): String = when (p) {
         "anthropic" -> "Anthropic"
         "gemini" -> "Gemini"
-        "local" -> "本地引擎"
         else -> "OpenAI 兼容"
     }
 
-    /** 当前模型状态行：协议 / 模型 / 下载与加载状态（需求 3） */
+    /** 当前模型状态行：协议 / 模型 / API Base（需求 3） */
     private fun updateModelStatus(model: ModelConfig) {
         if (!::modelStatusText.isInitialized) return
-        modelStatusText.text = if (model.protocol == "local") {
-            val f = java.io.File(filesDir, "models/llm/${model.model}")
-            val loaded = f.exists() && com.example.livetranslate.asr.LocalLlmEngine.isModelLoaded(f.absolutePath)
-            "● ${protocolLabel(model.protocol)} · ${model.model} · " + when {
-                !f.exists() -> "⚠ 未下载（模型管理页下载）"
-                loaded -> "已加载 ✓"
-                else -> "已下载 · 首次翻译时加载"
-            }
-        } else {
-            "● ${protocolLabel(model.protocol)} · ${model.model} · ${model.apiBase}"
-        }
+        modelStatusText.text = "● ${protocolLabel(model.protocol)} · ${model.model} · ${model.apiBase}"
     }
 
     private fun currentModelFromSpinner(): ModelConfig {
@@ -573,36 +527,12 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
         }
         protocolSpinner.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_item,
-            listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)", "本地 LLM (llama.cpp)")
+            listOf("OpenAI 兼容", "Anthropic (Claude)", "Gemini (Google)")
         ).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
         protocolSpinner.setSelection(
-            when {
-                model.protocol == "local" || model.apiBase == "local" -> 3
-                model.protocol == "anthropic" -> 1
-                model.protocol == "gemini" -> 2
-                else -> 0
-            }
+            when (model.protocol) { "anthropic" -> 1; "gemini" -> 2; else -> 0 }
         )
-        // 需求 2：选本地 LLM 协议时自动填入 local 地址（无需手填），并提示模型名填 GGUF 文件名
-        protocolSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (pos == 3) {
-                    etBase.setText("local")
-                    etKey.setText("")
-                    etModel.hint = "GGUF 文件名，如 Qwen3.5-2B-Q4_K_M.gguf"
-                } else {
-                    etModel.hint = "模型名"
-                }
-            }
-            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
-        }
-        container.addView(protocolSpinner)
-        container.addView(TextView(this).apply {
-            text = "本地 LLM：模型名填 GGUF 文件名（模型管理页下载后自动出现在模型列表）"
-            textSize = 11f
-            setTextColor(0xFFCC7733.toInt())
-            setPadding(dp(2), dp(6), dp(2), 0)
-        })
+
 
         // 拉取模型列表（按协议对应端点，防止手输模型名出错）
         btnFetchModels.setOnClickListener {
@@ -719,7 +649,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                     extraLanguages = etExtra.text.toString()
                         .split(",").map { it.trim() }.filter { it.isNotEmpty() },
                     protocol = when (protocolSpinner.selectedItemPosition) {
-                        1 -> "anthropic"; 2 -> "gemini"; 3 -> "local"; else -> "openai"
+                        1 -> "anthropic"; 2 -> "gemini"; else -> "openai"
                     },
                 )
                 if (index < 0) store.addModel(updated) else store.setActiveModel(index, updated)
@@ -1113,8 +1043,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
         addSection("▸ 语音识别（ASR）")
         for (g in ModelRepository.GROUPS.filter { it.kind == "asr" }) addGroupRow(g)
-        addSection("▸ 翻译模型（LLM）")
-        for (g in ModelRepository.GROUPS.filter { it.kind == "llm" }) addGroupRow(g)
 
         dialogBuilder()
             .setTitle("模型管理")
@@ -1128,8 +1056,7 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
 
     private fun runBenchmark() {
         val model = currentModelFromSpinner()
-        // 本地 LLM 模式无需 API Key
-        if (model.protocol != "local" && model.apiKey.isEmpty()) {
+        if (model.apiKey.isEmpty()) {
             appendStatus("❌ 请先配置 API Key 再跑基准测试")
             return
         }
@@ -1142,7 +1069,6 @@ class MainActivity : AppCompatActivity(), CaptureService.Listener {
                 noThink = model.noThink, jsonResponse = model.jsonResponse,
                 contextTurns = model.contextTurns, timeoutSec = model.timeout.toLong(),
                 protocol = model.protocol,
-                modelDir = java.io.File(this.filesDir, "models/llm").absolutePath,
             )
             val runner = BenchmarkRunner(translator)
             val summary = runner.run()

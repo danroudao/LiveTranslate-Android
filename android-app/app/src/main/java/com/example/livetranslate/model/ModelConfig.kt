@@ -59,7 +59,8 @@ data class ModelConfig(
                 if (arr == null) emptyList()
                 else (0 until arr.length()).mapNotNull { arr.optString(it).ifBlank { null } }
             },
-            protocol = o.optString("protocol", "openai"),
+            // 旧版本地 LLM 配置（protocol=local）已废弃，回退 OpenAI 兼容
+            protocol = o.optString("protocol", "openai").takeIf { it in setOf("openai", "anthropic", "gemini") } ?: "openai",
         )
 
         fun listToJson(models: List<ModelConfig>): String {

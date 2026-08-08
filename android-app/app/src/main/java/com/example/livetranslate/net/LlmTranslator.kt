@@ -32,9 +32,7 @@ class LlmTranslator(
     val jsonResponse: Boolean = false,
     val contextTurns: Int = 0,
     val timeoutSec: Long = 30,
-    val protocol: String = "openai",  // "openai" | "anthropic" | "gemini" | "local"
-    /** 本地 LLM 模型目录（protocol=local 时使用，GGUF 存放于 <dir>/<model>.gguf） */
-    val modelDir: String? = null,
+    val protocol: String = "openai",  // "openai" | "anthropic" | "gemini"
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -47,19 +45,6 @@ class LlmTranslator(
 
     companion object {
         private const val TAG = "LlmTranslator"
-
-        /** 判断是否为本地部署的推理服务（llama.cpp 等）：本机回环地址或 protocol=local 的 apiBase */
-        fun isLocalApiBase(apiBase: String): Boolean {
-            val base = apiBase.lowercase()
-            return base == "local" || base.contains("127.0.0.1") || base.contains("localhost") ||
-                base.contains("0.0.0.0") || base.contains("[::1]")
-        }
-
-        /** 本地小模型专用精简提示词（缩短 prefill；本地 llama.cpp 无前缀缓存时每 token 都是成本） */
-        fun localPrompt(targetLang: String): String {
-            val tgt = LANGUAGE_DISPLAY[targetLang] ?: targetLang
-            return "Translate the user's message into $tgt. Output only the translation."
-        }
 
         val LANGUAGE_DISPLAY = mapOf(
             "en" to "English", "ja" to "Japanese", "zh" to "Chinese", "ko" to "Korean",
@@ -89,15 +74,11 @@ class LlmTranslator(
 
     fun withTargetLanguage(lang: String): LlmTranslator =
         LlmTranslator(apiBase, apiKey, model, lang, maxTokens, temperature, streaming,
-            systemPrompt, noSystemRole, noThink, jsonResponse, contextTurns, timeoutSec, protocol, modelDir)
+            systemPrompt, noSystemRole, noThink, jsonResponse, contextTurns, timeoutSec, protocol)
 
     private fun buildSystemPrompt(sourceLang: String): String {
         val src = LANGUAGE_DISPLAY[sourceLang] ?: sourceLang
         val tgt = LANGUAGE_DISPLAY[targetLanguage] ?: targetLanguage
-        // 本地部署（127.0.0.1/localhost）：未自定义提示词时用精简版，减少 prefill 延迟
-        if (systemPrompt == null && isLocalApiBase(apiBase)) {
-            return localPrompt(targetLanguage)
-        }
         return (systemPrompt ?: DEFAULT_PROMPT)
             .replace("{source_lang}", src)
             .replace("{target_lang}", tgt)
@@ -350,38 +331,10 @@ class LlmTranslator(
             when (protocol) {
                 "anthropic" -> translateAnthropic(systemPrompt, text, sourceLang, onPartial, onFinal, onError)
                 "gemini" -> translateGemini(systemPrompt, text, sourceLang, onPartial, onFinal, onError)
-                "local" -> translateLocal(systemPrompt, text, sourceLang, onPartial, onFinal, onError)
                 else -> translateOpenAi(systemPrompt, text, sourceLang, onPartial, onFinal, onError)
             }
         } catch (e: Exception) {
             onError(e.message ?: e.javaClass.simpleName)
-        }
-    }
-
-    // ---------- 本地 llama.cpp 内嵌引擎（protocol=local） ----------
-
-    private fun translateLocal(
-        systemPrompt: String, text: String, sourceLang: String,
-        onPartial: (String) -> Unit, onFinal: (String) -> Unit, onError: (String) -> Unit,
-    ) {
-        val dir = modelDir ?: run { onError("本地模式未配置模型目录"); return }
-        val file = java.io.File(dir, model)
-        if (!file.exists()) {
-            onError("本地模型不存在: $model（请先在模型管理页下载 GGUF）")
-            return
-        }
-        val result = com.example.livetranslate.asr.LocalLlmEngine.chat(
-            file.absolutePath, systemPrompt, text,
-            onPartial = { partial ->
-                if (streaming) onPartial(partial)
-            },
-            onError = { err ->
-                Log.w(TAG, "local chat error: $err")
-                onError(err)
-            },
-        )
-        if (result != null) {
-            finalizeResult(result, text, onFinal, onError)
         }
     }
 
