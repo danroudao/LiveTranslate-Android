@@ -394,7 +394,10 @@ class CaptureService : Service() {
         exec.execute {
             translator.translateStreaming(
                 text, sourceLang,
-                onPartial = { partial -> overlay?.update(text, partial) },
+                onPartial = { partial ->
+                    // 本地引擎：翻译极快（~0.35s），流式整合过程不上字幕条（用户反馈跳动），onFinal 一次性显示
+                    if (translator.protocol != "local") overlay?.update(text, partial)
+                },
                 onFinal = { final ->
                     overlay?.update(text, final)
                     listener?.onTranslation(final)
