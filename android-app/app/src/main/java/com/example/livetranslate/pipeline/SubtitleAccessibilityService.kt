@@ -128,6 +128,9 @@ class SubtitleAccessibilityService : AccessibilityService() {
         }
         tv.typeface = if (style.bold) android.graphics.Typeface.create(tf, android.graphics.Typeface.BOLD) else tf
         tv.textSize = size
+        // 横屏：文本在可用槽位内居中（竖屏左对齐）；按钮占右侧，居中为槽位中心
+        tv.gravity = if (resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels)
+            Gravity.CENTER_HORIZONTAL else Gravity.START
         // 背景越透明文字越需要阴影：全透明加重、半透明常规、不透明关闭
         when {
             style.transparent -> tv.setShadowLayer(dp(5).toFloat(), 0f, dp(1).toFloat(), 0xE6000000.toInt())

@@ -157,6 +157,8 @@ data class SubtitleStyle(
 - 旋转处理：记住旧方向的 宽/高/y → 恢复新方向记忆（首次进入新方向=全宽+默认顶部位）；
   尺寸 clamp 到新屏幕；固定高度 ≤ 70% 屏高；菜单锚点失效 → 自动收起；字号随 screenWdp 重算
 - 默认顶部位：竖屏 90dp / 横屏 48dp；无障碍条底边距：竖屏 80dp / 横屏 48dp
+- 横屏文本居中：`applyTextAlignment()`（content/原译文 TextView gravity=CENTER_HORIZONTAL，左右 padding 对称）；
+  无障碍条 TextView gravity=CENTER_HORIZONTAL（按钮占右侧，居中为槽位中心）；竖屏均保持左对齐
 - 无障碍条 `onConfigurationChanged` → `adaptToScreen()`（Service 能收到配置回调）
 
 **字幕模式（v0.12.8）**：
@@ -290,7 +292,7 @@ adb exec-out screencap -p > /tmp/x.png
 | v0.10.1 | 修复：菜单与悬浮窗重叠（showAtLocation 手动定位+高度限制）、滑杆黑块（底色提亮+清背景） |
 | v0.11.0 (9) | 三主题可切换（ThemeManager）+ VTuber 主题（AI 生成资产）+ 暗色主题还原第一版 + 按钮纯色化 |
 | v0.12.7 | 全透明纯字幕模式：背景/毛玻璃归零 + 文字阴影分级 + chrome 自动隐藏/点击呼出 + 通知栏字幕窗开关兑底；预设保留字体族 + 新增「透明」预设 |
-| v0.12.8 | 横竖屏自适应（DisplayListener 重排 + 横竖屏各自布局记忆 + 菜单限高滚动）+ 字幕模式切换（仅译文/双语，持久化）+ 无障碍菜单实测高度定位（修原 content.height=0 偏移失效） |
+| v0.12.8 | 横竖屏自适应（DisplayListener 重排 + 横竖屏各自布局记忆 + 横屏文本居中 + 菜单限高滚动）+ 字幕模式切换（仅译文/双语，持久化）+ 无障碍菜单实测高度定位（修原 content.height=0 偏移失效） |
 
 ## 9. 建议的 UI 改进方向（供接手参考）
 

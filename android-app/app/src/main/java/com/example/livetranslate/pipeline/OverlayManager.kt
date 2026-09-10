@@ -51,6 +51,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
 
     // 全透明模式：chrome（⚙/✕ 工具行 + ⤡ 手柄）自动隐藏状态
     private var topRowView: View? = null
+    private var contentView: LinearLayout? = null
     private var chromeHidden = false
     private val chromeHideRunnable = Runnable { hideChrome() }
 
@@ -185,6 +186,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             }
             content.addView(original)
             content.addView(translation)
+            contentView = content
             // 菜单触发限定在 ⚙ 图标（内容区点击不再弹菜单，避免误触）
             v.addView(content, android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
@@ -337,7 +339,22 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         }
         originalView?.let { applyFont(it, "original") }
         translationView?.let { applyFont(it, "translation") }
+        applyTextAlignment()
         syncChromeForTransparency(initial = false)
+    }
+
+    /**
+     * 横屏：字幕文本水平居中（窗口虽居中，wrap_content 的左对齐文本视觉上偏左）；
+     * 竖屏保持原有左对齐观感。
+     */
+    private fun applyTextAlignment() {
+        val center = isLandscape()
+        val g = if (center) Gravity.CENTER_HORIZONTAL else Gravity.START
+        contentView?.gravity = g
+        originalView?.gravity = g
+        translationView?.gravity = g
+        // 居中时左右 padding 对称，避免几何中心偏移
+        contentView?.setPadding(dp(14), dp(4), if (center) dp(14) else dp(10), dp(24))
     }
 
     // ---------- 全透明模式：chrome 自动隐藏 + 点击呼出 ----------
@@ -770,6 +787,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             translationView = null
             resizeHandle = null
             topRowView = null
+            contentView = null
             params = null
             // iOS 退出动效：淡出 + 上滑
             v.animate()
