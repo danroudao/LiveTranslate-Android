@@ -54,10 +54,32 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     private var chromeHidden = false
     private val chromeHideRunnable = Runnable { hideChrome() }
 
-    // 屏幕尺寸（自适应基准）
-    private val screenW = context.resources.displayMetrics.widthPixels
-    private val screenH = context.resources.displayMetrics.heightPixels
-    private val screenWdp = screenW / context.resources.displayMetrics.density
+    // 屏幕尺寸（自适应基准）——随旋转/折屏变化动态刷新，不能在构造时缓存死
+    private var screenW = context.resources.displayMetrics.widthPixels
+    private var screenH = context.resources.displayMetrics.heightPixels
+    private var screenWdp = screenW / context.resources.displayMetrics.density
+
+    private val displayManager = context.getSystemService(Context.DISPLAY_SERVICE)
+        as android.hardware.display.DisplayManager
+    private val displayListener = object : android.hardware.display.DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId == android.view.Display.DEFAULT_DISPLAY) {
+                handler.post { onScreenMetricsChanged() }
+            }
+        }
+    }
+
+    // 横竖屏各自的布局记忆：旋转后恢复用户在该方向拖/拉的尺寸与位置
+    private val widthByOrientation = HashMap<Boolean, Int>()
+    private val heightByOrientation = HashMap<Boolean, Int>()
+    private val yByOrientation = HashMap<Boolean, Int>()
+
+    private fun isLandscape(): Boolean = screenW > screenH
+
+    /** 横屏屏高小：顶部边距收紧（竖屏 90dp 是给主界面操作卡让位） */
+    private fun defaultTopY(landscape: Boolean): Int = if (landscape) dp(48) else dp(90)
 
     // 边缘留白（dp）
     private val edgeMargin = 12
@@ -94,6 +116,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     fun show() {
         if (view != null) return
         handler.post {
+            refreshScreenMetrics()
             val v = android.widget.FrameLayout(context).apply {
                 isClickable = true
             }
@@ -190,7 +213,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
 
             // 窗口参数：边缘留白 + 屏幕自适应初始尺寸
             val lp = WindowManager.LayoutParams(
-                if (store.overlayWidthPx > 0) store.overlayWidthPx
+                if (store.overlayWidthPx > 0) store.overlayWidthPx.coerceAtMost(screenW - dp(edgeMargin * 2))
                 else screenW - dp(edgeMargin * 2),
                 if (store.overlayHeightPx > 0) store.overlayHeightPx
                 else WindowManager.LayoutParams.WRAP_CONTENT,
@@ -201,7 +224,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                y = dp(90)   // 屏幕顶部（状态栏下方），避免盖住主界面操作卡按钮
+                y = defaultTopY(isLandscape())   // 顶部（状态栏下方），横竖屏各自默认位
             }
             // 液态玻璃：窗口级背景模糊（API 31+，背后内容真实模糊）
             com.example.livetranslate.ui.LiquidGlass.blurWindow(lp, 26, context)
@@ -217,6 +240,8 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 refresh()
                 // 全透明模式：初始显示 chrome，5s 后自动淡出（点击字幕条呼出）
                 syncChromeForTransparency(initial = true)
+                // 旋转/折屏监听：重算窗口尺寸、位置与字号
+                runCatching { displayManager.registerDisplayListener(displayListener, handler) }
                 // iOS 进入动效：淡入 + 从顶部下滑
                 v.alpha = 0f
                 v.translationY = -dp(24).toFloat()
@@ -230,6 +255,54 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 view = null
             }
         }
+    }
+
+    // ---------- 横竖屏/尺寸变化适配 ----------
+
+    private fun refreshScreenMetrics() {
+        val dm = context.resources.displayMetrics
+        screenW = dm.widthPixels
+        screenH = dm.heightPixels
+        screenWdp = screenW / dm.density
+    }
+
+    /**
+     * 旋转/折屏/分屏尺寸变化：
+     *  1. 按旧方向记住当前窗口布局，按新方向恢复（首次进入新方向→全宽 + 默认顶部位）
+     *  2. 用户尺寸/位置 clamp 到新屏幕边界；固定高度不超过 70% 屏高
+     *  3. 菜单锚点已失效，直接收起；重算字号（自适应字号跟屏宽）
+     */
+    private fun onScreenMetricsChanged() {
+        val oldW = screenW
+        val oldH = screenH
+        val wasLandscape = oldW > oldH
+        refreshScreenMetrics()
+        if (screenW == oldW && screenH == oldH) return
+        val v = view ?: return
+        val lp = params ?: return
+        rememberLayout(wasLandscape, lp)
+        if (styleMenu != null) {
+            styleMenu?.dismiss()
+            styleMenu = null
+        }
+        val nowLandscape = isLandscape()
+        val maxW = (screenW - dp(edgeMargin * 2)).coerceAtLeast(dp(140))
+        lp.width = (widthByOrientation[nowLandscape] ?: maxW).coerceIn(dp(140), maxW)
+        lp.height = heightByOrientation[nowLandscape] ?: WindowManager.LayoutParams.WRAP_CONTENT
+        if (lp.height > 0) {
+            lp.height = lp.height.coerceIn(dp(64), (screenH * 0.7f).toInt().coerceAtLeast(dp(64)))
+        }
+        lp.y = (yByOrientation[nowLandscape] ?: defaultTopY(nowLandscape))
+            .coerceIn(dp(24), (screenH - dp(96)).coerceAtLeast(dp(24)))
+        runCatching { wm.updateViewLayout(v, lp) }
+        applyStyle()   // 字号（screenWdp）/阴影重算
+        refresh()
+    }
+
+    private fun rememberLayout(landscape: Boolean, lp: WindowManager.LayoutParams) {
+        widthByOrientation[landscape] = lp.width
+        heightByOrientation[landscape] = lp.height
+        yByOrientation[landscape] = lp.y
     }
 
     private fun applyStyle() {
@@ -362,8 +435,8 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         for ((i, p) in presets.withIndex()) {
             val btn = presetPill(p.first)
             btn.setOnClickListener {
-                // 预设只改透明度/粗体/圆角，保留用户选择的字体族
-                style = p.second.copy(fontFamily = style.fontFamily)
+                // 预设只改透明度/粗体/圆角，保留用户选择的字体族与字幕模式
+                style = p.second.copy(fontFamily = style.fontFamily, showOriginal = style.showOriginal)
                 store.subtitleStyle = style
                 store.overlayWidthPx = 0
                 store.overlayHeightPx = 0
@@ -396,6 +469,17 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             alphaLabel.text = SubtitleStyle.alphaLabel(p)
             applyStyle()
             if (becameTransparent) showTransparentHint()
+        })
+
+        // ── 字幕模式（仅译文 / 双语） ──
+        content.addView(rowLabel("字幕模式"))
+        content.addView(UIKit.segmentedControl(
+            context, listOf("仅译文", "双语"), if (style.showOriginal) 1 else 0
+        ) { pos ->
+            style = style.copy(showOriginal = pos == 1)
+            store.subtitleStyle = style
+            applyStyle()
+            handler.post { refresh() }
         })
 
         // ── 字号 ──
@@ -497,7 +581,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         val anchorTop = params?.y ?: 0
         val overlayBottom = anchorTop + (view?.height ?: anchor.height)
         val spaceBelow = screenH - overlayBottom - dp(16)
-        val menuH = dp(460) // 菜单内容估算高度
+        val menuH = dp(520) // 菜单内容估算高度（v0.12.8 新增字幕模式行）
         // 上方弹出时：菜单顶部对齐状态栏下方（不溢出屏幕）
         val targetTop = (anchorTop - menuH - dp(8)).coerceAtLeast(dp(44))
         val menuY = if (spaceBelow >= menuH) overlayBottom + dp(6) else targetTop
@@ -615,6 +699,9 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 lp.height = newH
                 store.overlayWidthPx = newW
                 store.overlayHeightPx = newH
+                // 同步本方向记忆：旋转后回到本方向能恢复用户尺寸
+                widthByOrientation[isLandscape()] = newW
+                heightByOrientation[isLandscape()] = newH
                 try {
                     wm.updateViewLayout(v, lp)
                 } catch (e: Exception) {
@@ -630,6 +717,8 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         val lp = params ?: return
         lp.width = screenW - dp(edgeMargin * 2)
         lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+        widthByOrientation.remove(isLandscape())
+        heightByOrientation.remove(isLandscape())
         try {
             wm.updateViewLayout(v, lp)
         } catch (e: Exception) {
@@ -645,10 +734,12 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     private fun snapBack(v: View) {
         val lp = params ?: return
         val maxY = screenH - dp(120)
-        val targetY = lp.y.coerceIn(dp(40), maxY)
+        val startY = lp.y
+        val targetY = startY.coerceIn(dp(40), maxY)
+        yByOrientation[isLandscape()] = targetY
         v.animate().alpha(1f).setDuration(120).start()
-        if (targetY == lp.y) return
-        ValueAnimator.ofInt(lp.y, targetY).apply {
+        if (targetY == startY) return
+        ValueAnimator.ofInt(startY, targetY).apply {
             duration = 320
             interpolator = IOSMotion.SPRING
             addUpdateListener {
@@ -668,6 +759,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     fun hide() {
         handler.post {
             handler.removeCallbacks(chromeHideRunnable)
+            runCatching { displayManager.unregisterDisplayListener(displayListener) }
             styleMenu?.dismiss()
             styleMenu = null
             dismissing = false
@@ -690,7 +782,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         }
     }
 
-    fun update(originalText: String, translationText: String, showOriginal: Boolean = true) {
+    fun update(originalText: String, translationText: String) {
         original = originalText
         translation = translationText
         scheduleRefresh()
@@ -730,32 +822,25 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         handler.post {
             val ov = originalView ?: return@post
             val tv = translationView ?: return@post
-            if (original.isEmpty()) {
-                // 原文消失：淡出后 GONE
-                if (ov.visibility == View.VISIBLE) {
-                    ov.animate()
-                        .alpha(0f)
-                        .setDuration(IOSMotion.FAST_MS)
-                        .withEndAction { ov.visibility = View.GONE }
-                        .start()
-                }
-            } else {
-                if (ov.visibility == View.GONE) {
+            // 原文：仅「双语」模式显示；切到仅译文或原文为空时淡出后 GONE
+            val wantOriginal = style.showOriginal && original.isNotEmpty()
+            if (wantOriginal) {
+                if (ov.visibility != View.VISIBLE) {
                     ov.visibility = View.VISIBLE
                     ov.alpha = 0f
                     ov.text = original
                     ov.animate().alpha(1f).setDuration(IOSMotion.BASE_MS)
                         .setInterpolator(IOSMotion.DECELERATE).start()
-                } else {
+                } else if (ov.text?.toString() != original) {
                     // 直接替换（无动画，避免频繁更新闪烁）
-                    if (ov.text?.toString() != original) {
-                        ov.text = original
-                    }
+                    ov.text = original
                 }
-            }
-            // 原文：直接替换（字幕原生行为，无动画避免闪烁）
-            if (ov.text?.toString() != original) {
-                ov.text = original
+            } else if (ov.visibility == View.VISIBLE) {
+                ov.animate()
+                    .alpha(0f)
+                    .setDuration(IOSMotion.FAST_MS)
+                    .withEndAction { ov.visibility = View.GONE }
+                    .start()
             }
             // 译文：直接替换（频繁更新时 fade 动画会闪烁）
             if (tv.text?.toString() != translation) {

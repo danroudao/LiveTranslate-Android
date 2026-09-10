@@ -13,6 +13,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ScrollView
 import android.widget.TextView
 import com.example.livetranslate.model.SettingsStore
 import com.example.livetranslate.model.SubtitleStyle
@@ -40,9 +41,9 @@ class SubtitleAccessibilityService : AccessibilityService() {
         /** 字幕条当前是否可见 */
         val isVisible: Boolean get() = instance?.textView != null
 
-        /** CaptureService 翻译完成时调用 */
-        fun updateSubtitle(text: String) {
-            instance?.postText(text)
+        /** CaptureService 翻译完成时调用（原文+译文分开传，字幕模式在服务内格式化） */
+        fun updateSubtitle(original: String, translation: String) {
+            instance?.postText(original, translation)
         }
 
         /** 显示/重新显示字幕条 */
@@ -63,6 +64,10 @@ class SubtitleAccessibilityService : AccessibilityService() {
 
     private var textView: TextView? = null
     private var containerView: LinearLayout? = null
+
+    // 最近一次字幕：切换模式/样式后立即重渲染（无需等下一句）
+    private var lastOriginal = ""
+    private var lastTranslation = ""
 
     // 全透明模式：chrome（⚙/✕/⤡）自动隐藏状态
     private var menuBtnView: View? = null
@@ -129,8 +134,15 @@ class SubtitleAccessibilityService : AccessibilityService() {
             style.needsTextShadow -> tv.setShadowLayer(dp(3).toFloat(), 0f, dp(1).toFloat(), 0xB3000000.toInt())
             else -> tv.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
         }
+        // 模式/字号变化后立即重渲染当前字幕（无需等下一句）
+        renderText()
         syncChromeForTransparency(initial = false)
     }
+
+    /** 底部边距：竖屏 80dp 让开导航/手势区；横屏屏高小 → 48dp */
+    private fun defaultBottomMargin(): Int =
+        if (resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels) dp(48)
+        else dp(80)
 
     // ---------- 全透明模式：chrome 自动隐藏 + 点击呼出 ----------
     // 关键约定：透明只作用于背景绘制，绝不改窗口 alpha / FLAG_NOT_TOUCHABLE，
@@ -251,7 +263,7 @@ class SubtitleAccessibilityService : AccessibilityService() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = dp(80)  // 底部安全区上方（边缘留白）
+            y = defaultBottomMargin()  // 底部安全区上方（竖屏 80dp / 横屏 48dp）
         }
         // 液态玻璃：窗口级背景模糊（API 31+）
         com.example.livetranslate.ui.LiquidGlass.blurWindow(params, 24, this)
@@ -342,7 +354,7 @@ class SubtitleAccessibilityService : AccessibilityService() {
             val btn = presetPill(p.first)
             btn.setOnClickListener {
                 // 预设只改透明度/粗体/圆角，保留用户选择的字体族
-                style = p.second.copy(fontFamily = style.fontFamily)
+                style = p.second.copy(fontFamily = style.fontFamily, showOriginal = style.showOriginal)
                 store.subtitleStyle = style
                 applyStyle()
                 presetBtns.forEachIndexed { j, b -> b.alpha = if (j == i) 1f else 0.55f }
@@ -370,6 +382,16 @@ class SubtitleAccessibilityService : AccessibilityService() {
             alphaLabel.text = SubtitleStyle.alphaLabel(p)
             applyStyle()
             if (becameTransparent) showTransparentHint()
+        })
+
+        // ── 字幕模式（仅译文 / 双语） ──
+        content.addView(rowLabel("字幕模式"))
+        content.addView(UIKit.segmentedControl(
+            this, listOf("仅译文", "双语"), if (style.showOriginal) 1 else 0
+        ) { pos ->
+            style = style.copy(showOriginal = pos == 1)
+            store.subtitleStyle = style
+            applyStyle()
         })
 
         // ── 字号 ──
@@ -428,7 +450,12 @@ class SubtitleAccessibilityService : AccessibilityService() {
             (layoutParams as LinearLayout.LayoutParams).topMargin = dp(14)
         })
 
-        val popup = PopupWindow(content, dp(290), WindowManager.LayoutParams.WRAP_CONTENT, true)
+        // 菜单内容包 ScrollView：横屏屏高小/菜单超高时内部滚动（与悬浮窗菜单一致）
+        val scrollContent = ScrollView(this).apply {
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(content)
+        }
+        val popup = PopupWindow(scrollContent, dp(290), WindowManager.LayoutParams.WRAP_CONTENT, true)
         popup.isOutsideTouchable = true
         popup.setWindowLayoutType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
         // 点击外部关闭菜单时恢复 chrome 计时（否则弹出状态残留、按钮不再自动隐藏）
@@ -440,8 +467,17 @@ class SubtitleAccessibilityService : AccessibilityService() {
             syncChromeForTransparency(initial = false)
         }
         try {
-            // 锚定字幕条上方弹出（不占屏幕中心）
-            popup.showAsDropDown(anchor, 0, -popup.contentView.height - dp(8))
+            // 先测量内容高度再定位：原实现用 content.height（恒为 0）算偏移，菜单会压住字幕条
+            content.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(dp(290), android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED))
+            val contentH = content.measuredHeight
+            val loc = IntArray(2)
+            anchor.getLocationOnScreen(loc)
+            // 上方可用空间不足（横屏常见）→ 限高内部滚动，菜单顶部不越出屏幕
+            val spaceAbove = (loc[1] - dp(12)).coerceAtLeast(dp(200))
+            popup.height = (contentH + dp(24)).coerceAtMost(spaceAbove)
+            popup.showAsDropDown(anchor, 0, -popup.height - dp(8))
             styleMenu = popup
             content.postDelayed({
                 com.example.livetranslate.ui.LiquidGlass.blurPopup(popup, 24, this)
@@ -509,18 +545,51 @@ class SubtitleAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun postText(text: String) {
+    private fun postText(original: String, translation: String) {
         handler.post {
-            textView?.let {
-                if (it.text?.toString() != text) {
-                    IOSMotion.crossfadeText(it, text)
-                }
-            }
+            lastOriginal = original
+            lastTranslation = translation
+            renderText()
+        }
+    }
+
+    /** 按字幕模式渲染：仅译文 / 双语（译文未出时回退显示原文，避免空白） */
+    private fun renderText() {
+        val tv = textView ?: return
+        if (lastOriginal.isEmpty() && lastTranslation.isEmpty()) return
+        val text = when {
+            !style.showOriginal -> lastTranslation.ifEmpty { lastOriginal }
+            lastTranslation.isEmpty() -> lastOriginal
+            else -> "$lastOriginal\n$lastTranslation"
+        }
+        if (tv.text?.toString() != text) {
+            IOSMotion.crossfadeText(tv, text)
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // 纯字幕显示，无需处理事件
+    }
+
+    /** 横竖屏/尺寸变化：重排字幕条位置与高度上限，收起锚点失效的菜单 */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        handler.post { adaptToScreen() }
+    }
+
+    private fun adaptToScreen() {
+        val c = containerView ?: return
+        val lp = params ?: return
+        val dm = resources.displayMetrics
+        val maxH = (dm.heightPixels * 0.66f).toInt().coerceAtLeast(dp(56))
+        if (lp.height > 0) lp.height = lp.height.coerceIn(dp(56), maxH)
+        lp.y = defaultBottomMargin()
+        if (styleMenu != null) {
+            styleMenu?.dismiss()
+            styleMenu = null
+        }
+        runCatching { wm.updateViewLayout(c, lp) }
+        applyStyle()
     }
 
     override fun onInterrupt() {

@@ -17,6 +17,8 @@ data class SubtitleStyle(
     val cornerRadius: Int = 14,
     /** 粗体 */
     val bold: Boolean = false,
+    /** 字幕模式：true=原文+译文（双语）；false=仅译文 */
+    val showOriginal: Boolean = true,
 ) {
     /** 全透明模式：背景（底色/光泽/描边/模糊）整体移除，只保留文字 */
     val transparent: Boolean get() = alpha <= 0
@@ -30,6 +32,7 @@ data class SubtitleStyle(
         .put("font_family", fontFamily)
         .put("corner_radius", cornerRadius)
         .put("bold", bold)
+        .put("show_original", showOriginal)
 
     companion object {
         fun fromJson(o: JSONObject): SubtitleStyle = SubtitleStyle(
@@ -38,6 +41,7 @@ data class SubtitleStyle(
             fontFamily = o.optString("font_family", "default"),
             cornerRadius = o.optInt("corner_radius", 14).coerceIn(0, 48),
             bold = o.optBoolean("bold", false),
+            showOriginal = o.optBoolean("show_original", true),
         )
 
         /** 透明度滑杆文案（0 = 全透明） */

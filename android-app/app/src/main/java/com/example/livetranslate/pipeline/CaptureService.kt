@@ -443,7 +443,7 @@ class CaptureService : Service() {
                     updateNotificationSubtitle(text, final)
                     // 无障碍字幕条（若已开启）
                     if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isActive) {
-                        com.example.livetranslate.pipeline.SubtitleAccessibilityService.updateSubtitle("$text\n$final")
+                        com.example.livetranslate.pipeline.SubtitleAccessibilityService.updateSubtitle(text, final)
                     }
                     // 附加语言并行翻译（对应 _translate_extra_langs）
                     translateExtraLanguages(text, sourceLang, final)
@@ -493,7 +493,7 @@ class CaptureService : Service() {
                 for ((lang, r) in results) sb.append("\n[$lang] $r")
                 overlay?.update(text, sb.toString())
                 if (com.example.livetranslate.pipeline.SubtitleAccessibilityService.isActive) {
-                    com.example.livetranslate.pipeline.SubtitleAccessibilityService.updateSubtitle("$text\n$sb")
+                    com.example.livetranslate.pipeline.SubtitleAccessibilityService.updateSubtitle(text, sb.toString())
                 }
             }
         }.start()
