@@ -4,6 +4,7 @@ android-app/build/
 android-app/app/build/
 android-app/local.properties
 android-app/.kotlin/
+android-app/app/.cxx/
 *.iml
 .idea/
 

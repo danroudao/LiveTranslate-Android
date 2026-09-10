@@ -54,10 +54,22 @@ class SubtitleAccessibilityService : AccessibilityService() {
         fun hideSubtitleBar() {
             instance?.hideBar()
         }
+
+        /** 全透明模式 chrome 自动隐藏：静止 4s 淡出；初始显示 5s（留操作窗口） */
+        private const val CHROME_IDLE_MS = 4000L
+        private const val CHROME_INITIAL_MS = 5000L
+        private const val CHROME_FADE_MS = 180L
     }
 
     private var textView: TextView? = null
     private var containerView: LinearLayout? = null
+
+    // 全透明模式：chrome（⚙/✕/⤡）自动隐藏状态
+    private var menuBtnView: View? = null
+    private var closeBtnView: View? = null
+    private var resizeBtnView: View? = null
+    private var chromeHidden = false
+    private val chromeHideRunnable = Runnable { hideChrome() }
     private val handler = Handler(Looper.getMainLooper())
     private val wm: WindowManager by lazy {
         getSystemService(WINDOW_SERVICE) as WindowManager
@@ -71,22 +83,34 @@ class SubtitleAccessibilityService : AccessibilityService() {
     private fun applyStyle() {
         val tv = textView ?: return
         val c = containerView ?: return
-        // 液态玻璃字幕条：深蓝灰半透明（透明度随样式）+ 顶部光泽 + 高光描边
-        val radius = dp(style.cornerRadius).toFloat()
-        val base = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(Color.argb(style.alpha, 16, 18, 28))
+        if (style.transparent) {
+            // 全透明：背景层（底色/光泽/描边）整体移除，只留文字
+            c.background = null
+        } else {
+            // 液态玻璃字幕条：深蓝灰半透明（透明度随样式）+ 顶部光泽 + 高光描边
+            // 光泽/描边强度随 alpha 等比缩放：滑杆拉低时不会残留白边
+            val radius = dp(style.cornerRadius).toFloat()
+            fun scaled(a: Int): Int = a * style.alpha / 255
+            val base = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(Color.argb(style.alpha, 16, 18, 28))
+            }
+            val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(scaled(0x3D) shl 24, scaled(0x14) shl 24, 0x00000000)).apply {
+                cornerRadius = radius
+            }
+            val ring = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(0x00000000)
+                setStroke(dp(1), scaled(0x73) shl 24)
+            }
+            c.background = android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
         }
-        val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(0x3DFFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
-            cornerRadius = radius
+        // 全透明时同步关闭窗口毛玻璃（否则透明背景仍透出模糊灰雾，同时省 GPU）
+        params?.let {
+            com.example.livetranslate.ui.LiquidGlass.updateWindowBlur(
+                it, if (style.transparent) 0 else 24, wm, c)
         }
-        val ring = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(0x00000000)
-            setStroke(dp(1), 0x73FFFFFF.toInt())
-        }
-        c.background = android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
         val size = if (style.fontSize > 0) style.fontSize
                    else SubtitleStyle.autoFontSize(
                        resources.displayMetrics.widthPixels / resources.displayMetrics.density)
@@ -99,6 +123,71 @@ class SubtitleAccessibilityService : AccessibilityService() {
         }
         tv.typeface = if (style.bold) android.graphics.Typeface.create(tf, android.graphics.Typeface.BOLD) else tf
         tv.textSize = size
+        // 背景越透明文字越需要阴影：全透明加重、半透明常规、不透明关闭
+        when {
+            style.transparent -> tv.setShadowLayer(dp(5).toFloat(), 0f, dp(1).toFloat(), 0xE6000000.toInt())
+            style.needsTextShadow -> tv.setShadowLayer(dp(3).toFloat(), 0f, dp(1).toFloat(), 0xB3000000.toInt())
+            else -> tv.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
+        }
+        syncChromeForTransparency(initial = false)
+    }
+
+    // ---------- 全透明模式：chrome 自动隐藏 + 点击呼出 ----------
+    // 关键约定：透明只作用于背景绘制，绝不改窗口 alpha / FLAG_NOT_TOUCHABLE，
+    // 保证 ✕ 永远可点；chrome 隐藏时置 INVISIBLE（不响应触摸，防误触关闭），
+    // 点击字幕条任意处呼出；主界面③按钮/通知栏开关可完底关闭。
+
+    /** chrome = ⚙/✕/⤡（全透明模式下淡出，点击字幕条恢复） */
+    private fun chromeViews(): List<View> = listOfNotNull(menuBtnView, closeBtnView, resizeBtnView)
+
+    private fun syncChromeForTransparency(initial: Boolean) {
+        if (!style.transparent) {
+            handler.removeCallbacks(chromeHideRunnable)
+            showChrome(animate = false)
+            return
+        }
+        if (styleMenu != null) return  // 菜单打开期间保持按钮可见（滑杆还要继续拖）
+        handler.removeCallbacks(chromeHideRunnable)
+        if (initial) showChrome(animate = false)
+        handler.postDelayed(chromeHideRunnable, if (initial) CHROME_INITIAL_MS else CHROME_IDLE_MS)
+    }
+
+    private fun showChrome(animate: Boolean = true) {
+        chromeHidden = false
+        for (cv in chromeViews()) {
+            cv.animate().cancel()
+            cv.visibility = View.VISIBLE
+            if (animate) {
+                if (cv.alpha < 1f) cv.alpha = 0f
+                cv.animate().alpha(1f).setDuration(CHROME_FADE_MS).start()
+            } else {
+                cv.alpha = 1f
+            }
+        }
+    }
+
+    private fun hideChrome() {
+        if (!style.transparent || styleMenu != null) return
+        chromeHidden = true
+        for (cv in chromeViews()) {
+            cv.animate().alpha(0f).setDuration(CHROME_FADE_MS).withEndAction {
+                if (chromeHidden && cv.alpha == 0f) cv.visibility = View.INVISIBLE
+            }.start()
+        }
+    }
+
+    /** 点击字幕条呼出 chrome —— 全透明模式下 ✕/⚙ 的唯一入口 */
+    private fun revealChrome() {
+        if (!style.transparent) return
+        handler.removeCallbacks(chromeHideRunnable)
+        showChrome()
+        if (styleMenu == null) handler.postDelayed(chromeHideRunnable, CHROME_IDLE_MS)
+    }
+
+    private fun showTransparentHint() {
+        android.widget.Toast.makeText(this,
+            "纯字幕模式：点击字幕条可呼出 ⚙/✕ 按钮",
+            android.widget.Toast.LENGTH_SHORT).show()
     }
 
     override fun onServiceConnected() {
@@ -151,6 +240,8 @@ class SubtitleAccessibilityService : AccessibilityService() {
         container.addView(menuBtn)
         container.addView(closeBtn)
         container.addView(resizeBtn)
+        // 点击字幕条呼出 chrome（全透明模式下按钮自动隐藏后的唯一入口）
+        container.setOnClickListener { revealChrome() }
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -170,6 +261,11 @@ class SubtitleAccessibilityService : AccessibilityService() {
             textView = tv
             this.params = params
             applyStyle()
+            menuBtnView = menuBtn
+            closeBtnView = closeBtn
+            resizeBtnView = resizeBtn
+            // 全透明模式：初始显示 chrome，5s 后自动淡出（点击字幕条呼出）
+            syncChromeForTransparency(initial = true)
             // iOS 进入动效：底部上滑 + 淡入
             container.alpha = 0f
             container.translationY = dp(24).toFloat()
@@ -216,6 +312,9 @@ class SubtitleAccessibilityService : AccessibilityService() {
     private fun showStyleMenu(anchor: View) {
         styleMenu?.dismiss()
         dismissing = false
+        // 菜单打开期间 chrome 保持可见（滑杆实时预览时按钮不能被自动隐藏）
+        handler.removeCallbacks(chromeHideRunnable)
+        showChrome(animate = false)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(14))
@@ -232,6 +331,7 @@ class SubtitleAccessibilityService : AccessibilityService() {
             "高清" to SubtitleStyle(alpha = 255, fontSize = 0f, bold = true, cornerRadius = 14),
             "夜览" to SubtitleStyle(alpha = 180, fontSize = 0f, bold = false, cornerRadius = 20),
             "极简" to SubtitleStyle(alpha = 120, fontSize = 0f, bold = false, cornerRadius = 8),
+            "透明" to SubtitleStyle(alpha = 0, fontSize = 0f, bold = false, cornerRadius = 8),
         )
         val presetRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -241,10 +341,12 @@ class SubtitleAccessibilityService : AccessibilityService() {
         for ((i, p) in presets.withIndex()) {
             val btn = presetPill(p.first)
             btn.setOnClickListener {
-                style = p.second
+                // 预设只改透明度/粗体/圆角，保留用户选择的字体族
+                style = p.second.copy(fontFamily = style.fontFamily)
                 store.subtitleStyle = style
                 applyStyle()
                 presetBtns.forEachIndexed { j, b -> b.alpha = if (j == i) 1f else 0.55f }
+                if (style.transparent) showTransparentHint()
             }
             presetBtns.add(btn)
             presetRow.addView(btn, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
@@ -258,12 +360,16 @@ class SubtitleAccessibilityService : AccessibilityService() {
             setPadding(dp(2), dp(12), dp(2), dp(2))
         }
 
-        // ── 背景透明度 ──
-        content.addView(rowLabel("背景透明度"))
+        // ── 背景透明度（拉到 0 = 全透明，只保留文字） ──
+        val alphaLabel = rowLabel(SubtitleStyle.alphaLabel(style.alpha))
+        content.addView(alphaLabel)
         content.addView(UIKit.iosSeekBar(this, 255, style.alpha) { p ->
+            val becameTransparent = style.alpha != 0 && p == 0
             style = style.copy(alpha = p)
             store.subtitleStyle = style
+            alphaLabel.text = SubtitleStyle.alphaLabel(p)
             applyStyle()
+            if (becameTransparent) showTransparentHint()
         })
 
         // ── 字号 ──
@@ -273,13 +379,16 @@ class SubtitleAccessibilityService : AccessibilityService() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val minusBtn = UIKit.pillButton(this, "−", matchWidth = true)
+        val curFontSize = if (style.fontSize > 0) style.fontSize
+            else SubtitleStyle.autoFontSize(resources.displayMetrics.widthPixels / resources.displayMetrics.density)
         val sizeVal = TextView(this).apply {
-            text = "20sp"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            text = "${curFontSize.toInt()}sp"; textSize = 14f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
         }
         val plusBtn = UIKit.pillButton(this, "+", matchWidth = true)
         fun adjust(delta: Float) {
-            var size = (if (style.fontSize > 0) style.fontSize else 20f) + delta
-            size = size.coerceIn(10f, 60f)
+            val cur = if (style.fontSize > 0) style.fontSize
+                else SubtitleStyle.autoFontSize(resources.displayMetrics.widthPixels / resources.displayMetrics.density)
+            val size = (cur + delta).coerceIn(10f, 60f)
             style = style.copy(fontSize = size)
             store.subtitleStyle = style
             sizeVal.text = "${size.toInt()}sp"
@@ -322,6 +431,14 @@ class SubtitleAccessibilityService : AccessibilityService() {
         val popup = PopupWindow(content, dp(290), WindowManager.LayoutParams.WRAP_CONTENT, true)
         popup.isOutsideTouchable = true
         popup.setWindowLayoutType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+        // 点击外部关闭菜单时恢复 chrome 计时（否则弹出状态残留、按钮不再自动隐藏）
+        popup.setOnDismissListener {
+            if (styleMenu === popup) {
+                styleMenu = null
+                dismissing = false
+            }
+            syncChromeForTransparency(initial = false)
+        }
         try {
             // 锚定字幕条上方弹出（不占屏幕中心）
             popup.showAsDropDown(anchor, 0, -popup.contentView.height - dp(8))
@@ -372,19 +489,21 @@ class SubtitleAccessibilityService : AccessibilityService() {
     /** 隐藏字幕条（iOS 退出动效） */
     fun hideBar() {
         handler.post {
+            handler.removeCallbacks(chromeHideRunnable)
             val c = containerView ?: return@post
+            // 立即解除引用：与主界面③按钮并发时避免重复 remove / 状态残留
+            containerView = null
+            textView = null
+            menuBtnView = null
+            closeBtnView = null
+            resizeBtnView = null
             c.animate()
                 .alpha(0f)
                 .translationY(dp(16).toFloat())
                 .setDuration(IOSMotion.FAST_MS)
                 .setInterpolator(IOSMotion.ACCELERATE)
                 .withEndAction {
-                    try {
-                        c.let { wm.removeView(it) }
-                    } catch (e: Exception) {
-                    }
-                    containerView = null
-                    textView = null
+                    runCatching { wm.removeView(c) }
                 }
                 .start()
         }
@@ -409,12 +528,18 @@ class SubtitleAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        handler.removeCallbacks(chromeHideRunnable)
+        try { styleMenu?.dismiss() } catch (e: Exception) {}
+        styleMenu = null
         try {
             containerView?.let { wm.removeView(it) }
         } catch (e: Exception) {
         }
         containerView = null
         textView = null
+        menuBtnView = null
+        closeBtnView = null
+        resizeBtnView = null
         super.onDestroy()
     }
 

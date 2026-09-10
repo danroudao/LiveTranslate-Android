@@ -116,8 +116,19 @@ FrameLayout v（TYPE_APPLICATION_OVERLAY 窗口，blurBehindRadius=71px 真毛�
 
 **液态玻璃**：
 - 窗口 `blurBehindRadius = dp(26)`（API 31+，真毛玻璃；低版本自动跳过）
-- 背景 = 深蓝灰半透明（alpha 随样式）+ 顶部光泽渐变 + 45% 白描边（`applyStyle()` 中 LayerDrawable 三层）
+- 背景 = 深蓝灰半透明（alpha 随样式）+ 顶部光泽渐变 + 45% 白描边（`applyStyle()` 中 LayerDrawable 三层；光泽/描边 alpha 随滑杆等比缩放，滑到 0 不残留白边）
 - 动画：显示淡入+下滑、隐藏淡出+上滑、译文交叉淡化
+
+**全透明纯字幕模式（v0.12.7，重要不变量）**：
+- alpha=0（滑杆到底或菜单「透明」预设）：背景三层整体置 null，同时 `LiquidGlass.updateWindowBlur(...,0,...)` 关掉窗口毛玻璃
+  （只删背景不关模糊会透出模糊灰雾；关掉同时省 GPU）
+- 文字阴影按透明度自动分级：0 → 5dp 重阴影，<160 → 3dp，其余关闭
+- chrome（⚙/✕ 工具行 + ⤡）自动隐藏：初始显示 5s / 呼出后静止 4s 淡出；点击字幕条任意处呼出；
+  隐藏 = INVISIBLE（不响应触摸，防误触关闭）；菜单打开期间不隐藏
+- **绝不**用窗口 alpha=0 / FLAG_NOT_TOUCHABLE 实现透明——否则 ✕ 将不可点；透明只改背景绘制层
+- 兑底关闭通道：通知栏 action「隐藏/显示字幕窗」（`CaptureService.ACTION_TOGGLE_OVERLAY`）；
+  无障碍字幕条同理，兑底 = 主界面③按钮/自身✕
+- PopupWindow 加 `setOnDismissListener`：点外部关菜单时恢复 chrome 计时（否则按钮不再自动隐藏）
 
 **样式菜单（showStyleMenu）定位逻辑（v0.10.1 修复，重要）**：
 ```kotlin
@@ -261,6 +272,7 @@ adb exec-out screencap -p > /tmp/x.png
 | v0.10.0 (8) | Liquid Glass 液态玻璃：窗口级 blurBehindRadius、玻璃面板、深色极光、菜单玻璃化 |
 | v0.10.1 | 修复：菜单与悬浮窗重叠（showAtLocation 手动定位+高度限制）、滑杆黑块（底色提亮+清背景） |
 | v0.11.0 (9) | 三主题可切换（ThemeManager）+ VTuber 主题（AI 生成资产）+ 暗色主题还原第一版 + 按钮纯色化 |
+| v0.12.7 | 全透明纯字幕模式：背景/毛玻璃归零 + 文字阴影分级 + chrome 自动隐藏/点击呼出 + 通知栏字幕窗开关兑底；预设保留字体族 + 新增「透明」预设 |
 
 ## 9. 建议的 UI 改进方向（供接手参考）
 

@@ -48,6 +48,9 @@ class CaptureService : Service() {
 
         const val ACTION_START = "com.example.livetranslate.START"
         const val ACTION_STOP = "com.example.livetranslate.STOP"
+
+        /** 通知栏"隐藏/显示字幕窗"开关（悬浮窗 ✕ 不可达时的兜底关闭通道） */
+        const val ACTION_TOGGLE_OVERLAY = "com.example.livetranslate.TOGGLE_OVERLAY"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val EXTRA_ASR_URL = "asr_url"
@@ -116,6 +119,7 @@ class CaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopPipeline()
+            ACTION_TOGGLE_OVERLAY -> toggleOverlay()
             ACTION_START -> {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
@@ -153,20 +157,51 @@ class CaptureService : Service() {
         }
     }
 
+    private var lastNotifText = "LiveTranslate 运行中"
+
     private fun buildNotification(text: String): Notification {
+        lastNotifText = text
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
         val style = Notification.BigTextStyle().bigText(text)
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("LiveTranslate")
             .setContentText(text.take(80))
             .setStyle(style)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pi)
             .setOngoing(true)
-            .build()
+        // 字幕窗开关：即使悬浮窗按钮不可达（全透明 + 误触等），也能从通知栏隐藏/恢复
+        if (overlay != null) {
+            val togglePi = PendingIntent.getService(
+                this, 1,
+                Intent(this, CaptureService::class.java).setAction(ACTION_TOGGLE_OVERLAY),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val label = if (overlay?.isVisible == true) "隐藏字幕窗" else "显示字幕窗"
+            builder.addAction(
+                Notification.Action.Builder(
+                    android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_notification),
+                    label, togglePi,
+                ).build()
+            )
+        }
+        return builder.build()
+    }
+
+    /** 通知栏开关：切换悬浮字幕窗可见性（不中断翻译） */
+    private fun toggleOverlay() {
+        val o = overlay ?: return
+        if (o.isVisible) o.hide() else o.show()
+        refreshNotification()
+    }
+
+    /** 重建当前通知（刷新开关文案/状态） */
+    private fun refreshNotification() {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIF_ID, buildNotification(lastNotifText))
     }
 
     /** 通知栏字幕：原文 + 译文（BigTextStyle，锁屏可见）—— 500ms 节流合并，避免频繁 notify 卡顿 */
@@ -241,6 +276,8 @@ class CaptureService : Service() {
             modelDir = java.io.File(this.filesDir, "models/llm").absolutePath,
         )
         this.overlay = OverlayManager(this, com.example.livetranslate.model.SettingsStore(this)).also { it.show() }
+        // 通知栏补上"隐藏/显示字幕窗"开关（此时 overlay 已存在）
+        refreshNotification()
         this.extraLanguages = model.extraLanguages
         running = true
         isRunning = true

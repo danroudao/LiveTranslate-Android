@@ -93,6 +93,27 @@ object LiquidGlass {
     }
 
     /**
+     * 运行中动态更新窗口背景模糊（0 = 关闭，API 31+）。
+     * 用于字幕条切到全透明模式时同步关闭毛玻璃，避免透出灰雾并省 GPU。
+     */
+    fun updateWindowBlur(
+        params: WindowManager.LayoutParams,
+        radiusDp: Int,
+        wm: WindowManager,
+        view: View,
+    ) {
+        if (Build.VERSION.SDK_INT < 31) return
+        val px = dp(view.context, radiusDp)
+        if (params.blurBehindRadius == px) return
+        params.blurBehindRadius = px
+        try {
+            wm.updateViewLayout(view, params)
+        } catch (e: Exception) {
+            // 窗口已移除等场景：忽略
+        }
+    }
+
+    /**
      * PopupWindow 背景模糊（API 31+）。
      * PopupWindow 未公开 blur API：通过 decorView 的 LayoutParams 更新，失败自动回退。
      */

@@ -49,6 +49,11 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     private var resizeHandle: TextView? = null
     private var params: WindowManager.LayoutParams? = null
 
+    // 全透明模式：chrome（⚙/✕ 工具行 + ⤡ 手柄）自动隐藏状态
+    private var topRowView: View? = null
+    private var chromeHidden = false
+    private val chromeHideRunnable = Runnable { hideChrome() }
+
     // 屏幕尺寸（自适应基准）
     private val screenW = context.resources.displayMetrics.widthPixels
     private val screenH = context.resources.displayMetrics.heightPixels
@@ -77,7 +82,13 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         }
         tv.typeface = if (style.bold) Typeface.create(tf, Typeface.BOLD) else tf
         tv.textSize = effectiveFontSize()
-        android.util.Log.i("OverlayStyle", "$tag textSize=${tv.textSize} typeface=${tv.typeface}")
+        // 背景越透明文字越需要阴影：全透明加重、半透明常规、不透明关闭
+        when {
+            style.transparent -> tv.setShadowLayer(dp(5).toFloat(), 0f, dp(1).toFloat(), 0xE6000000.toInt())
+            style.needsTextShadow -> tv.setShadowLayer(dp(3).toFloat(), 0f, dp(1).toFloat(), 0xB3000000.toInt())
+            else -> tv.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
+        }
+        android.util.Log.i("OverlayStyle", "$tag textSize=${tv.textSize} typeface=${tv.typeface} alpha=${style.alpha}")
     }
 
     fun show() {
@@ -155,6 +166,8 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             v.addView(content, android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+            // 点击字幕条呼出 chrome（全透明模式下按钮自动隐藏后的唯一入口）
+            v.setOnClickListener { revealChrome() }
 
             // resize 手柄：绝对定位右下角（窗口 resize 时始终跟随角落）
             val handle = TextView(context).apply {
@@ -199,8 +212,11 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
                 originalView = original
                 translationView = translation
                 resizeHandle = handle
+                topRowView = topRow
                 applyStyle()
                 refresh()
+                // 全透明模式：初始显示 chrome，5s 后自动淡出（点击字幕条呼出）
+                syncChromeForTransparency(initial = true)
                 // iOS 进入动效：淡入 + 从顶部下滑
                 v.alpha = 0f
                 v.translationY = -dp(24).toFloat()
@@ -218,24 +234,95 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
 
     private fun applyStyle() {
         val v = view ?: return
-        // 液态玻璃背景：深蓝灰半透明（透明度随样式）+ 顶部光泽 + 高光描边
-        val radius = dp(style.cornerRadius).toFloat()
-        val base = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(Color.argb(style.alpha, 16, 18, 28))
+        if (style.transparent) {
+            // 全透明：背景层（底色/光泽/描边）整体移除，只留文字
+            v.background = null
+        } else {
+            // 液态玻璃背景：深蓝灰半透明（透明度随样式）+ 顶部光泽 + 高光描边
+            // 光泽/描边强度随 alpha 等比缩放：滑杆拉低时不会残留白边
+            val radius = dp(style.cornerRadius).toFloat()
+            fun scaled(a: Int): Int = a * style.alpha / 255
+            val base = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(Color.argb(style.alpha, 16, 18, 28))
+            }
+            val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(scaled(0x3D) shl 24, scaled(0x14) shl 24, 0x00000000)).apply {
+                cornerRadius = radius
+            }
+            val ring = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(0x00000000)
+                setStroke(dp(1), scaled(0x73) shl 24)
+            }
+            v.background = android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
         }
-        val sheen = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(0x3DFFFFFF, 0x14FFFFFF, 0x00FFFFFF)).apply {
-            cornerRadius = radius
+        // 全透明时同步关闭窗口毛玻璃（否则透明背景仍透出模糊灰雾，同时省 GPU）
+        params?.let {
+            com.example.livetranslate.ui.LiquidGlass.updateWindowBlur(
+                it, if (style.transparent) 0 else 26, wm, v)
         }
-        val ring = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(0x00000000)
-            setStroke(dp(1), 0x73FFFFFF.toInt())
-        }
-        v.background = android.graphics.drawable.LayerDrawable(arrayOf(base, sheen, ring))
         originalView?.let { applyFont(it, "original") }
         translationView?.let { applyFont(it, "translation") }
+        syncChromeForTransparency(initial = false)
+    }
+
+    // ---------- 全透明模式：chrome 自动隐藏 + 点击呼出 ----------
+    // 关键约定：透明只作用于背景绘制，绝不改窗口 alpha / FLAG_NOT_TOUCHABLE，
+    // 保证 ✕ 永远可点；chrome 隐藏时置 INVISIBLE（不响应触摸，防误触关闭），
+    // 点击字幕条任意处呼出；通知栏另有"隐藏/显示字幕窗"兜底开关。
+
+    /** chrome = ⚙/✕ 工具行 + ⤡ 缩放手柄（全透明模式下淡出，点击字幕条恢复） */
+    private fun chromeViews(): List<View> = listOfNotNull(topRowView, resizeHandle)
+
+    private fun syncChromeForTransparency(initial: Boolean) {
+        if (!style.transparent) {
+            handler.removeCallbacks(chromeHideRunnable)
+            showChrome(animate = false)
+            return
+        }
+        if (styleMenu != null) return  // 菜单打开期间保持按钮可见（滑杆还要继续拖）
+        handler.removeCallbacks(chromeHideRunnable)
+        if (initial) showChrome(animate = false)
+        handler.postDelayed(chromeHideRunnable, if (initial) CHROME_INITIAL_MS else CHROME_IDLE_MS)
+    }
+
+    private fun showChrome(animate: Boolean = true) {
+        chromeHidden = false
+        for (cv in chromeViews()) {
+            cv.animate().cancel()
+            cv.visibility = View.VISIBLE
+            if (animate) {
+                if (cv.alpha < 1f) cv.alpha = 0f
+                cv.animate().alpha(1f).setDuration(CHROME_FADE_MS).start()
+            } else {
+                cv.alpha = 1f
+            }
+        }
+    }
+
+    private fun hideChrome() {
+        if (!style.transparent || styleMenu != null) return
+        chromeHidden = true
+        for (cv in chromeViews()) {
+            cv.animate().alpha(0f).setDuration(CHROME_FADE_MS).withEndAction {
+                if (chromeHidden && cv.alpha == 0f) cv.visibility = View.INVISIBLE
+            }.start()
+        }
+    }
+
+    /** 点击字幕条呼出 chrome —— 全透明模式下 ✕/⚙ 的唯一入口 */
+    private fun revealChrome() {
+        if (!style.transparent) return
+        handler.removeCallbacks(chromeHideRunnable)
+        showChrome()
+        if (styleMenu == null) handler.postDelayed(chromeHideRunnable, CHROME_IDLE_MS)
+    }
+
+    private fun showTransparentHint() {
+        android.widget.Toast.makeText(context,
+            "纯字幕模式：点击字幕条可呼出 ⚙/✕ 按钮",
+            android.widget.Toast.LENGTH_SHORT).show()
     }
 
     // ---------- 二级菜单（iOS 风格，锚定字幕条下方弹出） ----------
@@ -246,6 +333,9 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     private fun showStyleMenu(anchor: View) {
         styleMenu?.dismiss()
         dismissing = false
+        // 菜单打开期间 chrome 保持可见（滑杆实时预览时按钮不能被自动隐藏）
+        handler.removeCallbacks(chromeHideRunnable)
+        showChrome(animate = false)
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(14))
@@ -262,6 +352,7 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             "高清" to SubtitleStyle(alpha = 255, fontSize = 0f, bold = true, cornerRadius = 14),
             "夜览" to SubtitleStyle(alpha = 180, fontSize = 0f, bold = false, cornerRadius = 20),
             "极简" to SubtitleStyle(alpha = 120, fontSize = 0f, bold = false, cornerRadius = 8),
+            "透明" to SubtitleStyle(alpha = 0, fontSize = 0f, bold = false, cornerRadius = 8),
         )
         val presetRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -271,13 +362,15 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         for ((i, p) in presets.withIndex()) {
             val btn = presetPill(p.first)
             btn.setOnClickListener {
-                style = p.second
+                // 预设只改透明度/粗体/圆角，保留用户选择的字体族
+                style = p.second.copy(fontFamily = style.fontFamily)
                 store.subtitleStyle = style
                 store.overlayWidthPx = 0
                 store.overlayHeightPx = 0
                 applyStyle()
                 presetBtns.forEachIndexed { j, b -> b.alpha = if (j == i) 1f else 0.55f }
                 handler.post { refreshLayout() }
+                if (style.transparent) showTransparentHint()
             }
             presetBtns.add(btn)
             presetRow.addView(btn, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
@@ -293,12 +386,16 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
             setPadding(dp(2), dp(12), dp(2), dp(2))
         }
 
-        // ── 背景透明度 ──
-        content.addView(rowLabel("背景透明度"))
+        // ── 背景透明度（拉到 0 = 全透明，只保留文字） ──
+        val alphaLabel = rowLabel(SubtitleStyle.alphaLabel(style.alpha))
+        content.addView(alphaLabel)
         content.addView(UIKit.iosSeekBar(context, 255, style.alpha) { p ->
+            val becameTransparent = style.alpha != 0 && p == 0
             style = style.copy(alpha = p)
             store.subtitleStyle = style
+            alphaLabel.text = SubtitleStyle.alphaLabel(p)
             applyStyle()
+            if (becameTransparent) showTransparentHint()
         })
 
         // ── 字号 ──
@@ -414,6 +511,14 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         popup.isOutsideTouchable = true
         // 服务上下文无 Activity token：显式用 overlay 窗口类型
         popup.setWindowLayoutType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        // 点击外部关闭菜单时恢复 chrome 计时（否则弹出状态残留、按钮不再自动隐藏）
+        popup.setOnDismissListener {
+            if (styleMenu === popup) {
+                styleMenu = null
+                dismissing = false
+            }
+            syncChromeForTransparency(initial = false)
+        }
         // 高度上限 = 可用空间（菜单永不超出屏幕/不遮挡悬浮窗）
         val availH = if (spaceBelow >= menuH) spaceBelow else anchorTop - dp(44)
         val menuMaxH = (menuH + dp(24)).coerceAtMost(availH.coerceAtLeast(dp(240)))
@@ -557,25 +662,30 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
         }
     }
 
+    /** 字幕窗当前是否可见（CaptureService 通知栏"隐藏/显示字幕窗"开关用） */
+    val isVisible: Boolean get() = view != null
+
     fun hide() {
         handler.post {
+            handler.removeCallbacks(chromeHideRunnable)
             styleMenu?.dismiss()
             styleMenu = null
+            dismissing = false
             val v = view ?: return@post
+            // 立即解除引用：与通知栏开关并发时避免重复 remove / 状态残留
+            view = null
+            originalView = null
+            translationView = null
+            resizeHandle = null
+            topRowView = null
+            params = null
             // iOS 退出动效：淡出 + 上滑
             v.animate()
                 .alpha(0f)
                 .translationY(-dp(16).toFloat())
                 .setDuration(IOSMotion.FAST_MS)
                 .setInterpolator(IOSMotion.ACCELERATE)
-                .withEndAction {
-                    runCatching { wm.removeView(v) }
-                    view = null
-                    originalView = null
-                    translationView = null
-                    resizeHandle = null
-                    params = null
-                }
+                .withEndAction { runCatching { wm.removeView(v) } }
                 .start()
         }
     }
@@ -589,6 +699,11 @@ class OverlayManager(private val context: Context, private val store: SettingsSt
     companion object {
         /** 流式字幕刷新节流：本地引擎逐 token 回调（~50ms/次），直接刷新会逐字闪烁，合并到 ~120ms */
         private const val THROTTLE_MS = 120L
+
+        /** 全透明模式 chrome 自动隐藏：静止 4s 淡出；初始显示 5s（留操作窗口） */
+        private const val CHROME_IDLE_MS = 4000L
+        private const val CHROME_INITIAL_MS = 5000L
+        private const val CHROME_FADE_MS = 180L
     }
 
     private var lastThrottleAt = 0L

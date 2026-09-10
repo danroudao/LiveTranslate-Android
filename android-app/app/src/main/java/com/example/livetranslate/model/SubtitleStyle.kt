@@ -18,6 +18,12 @@ data class SubtitleStyle(
     /** 粗体 */
     val bold: Boolean = false,
 ) {
+    /** 全透明模式：背景（底色/光泽/描边/模糊）整体移除，只保留文字 */
+    val transparent: Boolean get() = alpha <= 0
+
+    /** 背景透光度较高时文字需要阴影，保证浅色画面上可读 */
+    val needsTextShadow: Boolean get() = alpha < 160
+
     fun toJson(): JSONObject = JSONObject()
         .put("alpha", alpha)
         .put("font_size", fontSize)
@@ -33,6 +39,13 @@ data class SubtitleStyle(
             cornerRadius = o.optInt("corner_radius", 14).coerceIn(0, 48),
             bold = o.optBoolean("bold", false),
         )
+
+        /** 透明度滑杆文案（0 = 全透明） */
+        fun alphaLabel(alpha: Int): String = when {
+            alpha <= 0 -> "背景透明度 · 全透明"
+            alpha >= 255 -> "背景透明度 · 不透明"
+            else -> "背景透明度 · ${alpha * 100 / 255}%"
+        }
 
         /** 屏幕自适应字号（sp）：宽屏大字号，窄屏小字号 */
         fun autoFontSize(screenWidthDp: Float): Float {
